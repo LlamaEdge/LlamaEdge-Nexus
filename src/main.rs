@@ -18,8 +18,8 @@ type SharedClient = Arc<Client<HttpConnector>>;
 #[derive(Clone)]
 struct AppState {
     client: SharedClient,
-    chat_url: Uri,
-    image_url: Uri,
+    chat_urls: Vec<Uri>,
+    image_urls: Vec<Uri>,
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -29,8 +29,14 @@ async fn main() {
 
     let app_state = AppState {
         client,
-        chat_url: "http://locahost:12345".parse().unwrap(),
-        image_url: "http://localhost:12306".parse().unwrap(),
+        chat_urls: vec![
+            "http://localhost:12345".parse().unwrap(),
+            "http://localhost:12346".parse().unwrap(),
+        ],
+        image_urls: vec![
+            "http://localhost:12306".parse().unwrap(),
+            "http://localhost:12307".parse().unwrap(),
+        ],
     };
 
     // Build our application with routes
@@ -58,7 +64,13 @@ async fn chat_handler(
 ) -> Result<Response<Body>, StatusCode> {
     println!("In chat_handler");
 
-    proxy_request(state.client, req, state.chat_url).await
+    // Choose a chat URL (for now, just use the first one)
+    let chat_url = state
+        .chat_urls
+        .first()
+        .cloned()
+        .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+    proxy_request(state.client, req, chat_url).await
 }
 
 async fn image_handler(
@@ -67,7 +79,13 @@ async fn image_handler(
 ) -> Result<Response<Body>, StatusCode> {
     println!("In image_handler");
 
-    proxy_request(state.client, req, state.image_url).await
+    // Choose an image URL (for now, just use the first one)
+    let image_url = state
+        .image_urls
+        .first()
+        .cloned()
+        .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+    proxy_request(state.client, req, image_url).await
 }
 
 async fn proxy_request(

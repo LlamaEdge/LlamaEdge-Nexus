@@ -13,13 +13,45 @@ use serde_json::Value;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
 
+use axum::extract::Extension;
+use std::sync::RwLock;
+
 type SharedClient = Arc<Client<HttpConnector>>;
 
 #[derive(Clone)]
 struct AppState {
     client: SharedClient,
-    chat_urls: Vec<Uri>,
-    image_urls: Vec<Uri>,
+    chat_urls: Arc<RwLock<Vec<Uri>>>,
+    image_urls: Arc<RwLock<Vec<Uri>>>,
+}
+
+impl AppState {
+    fn new(client: SharedClient) -> Self {
+        Self {
+            client,
+            chat_urls: Arc::new(RwLock::new(Vec::new())),
+            image_urls: Arc::new(RwLock::new(Vec::new())),
+        }
+    }
+
+    fn add_url(&self, url_type: UrlType, url: &Uri) {
+        match url_type {
+            UrlType::Chat => self.chat_urls.write().unwrap().push(url.clone()),
+            UrlType::Image => self.image_urls.write().unwrap().push(url.clone()),
+        }
+    }
+
+    fn remove_url(&self, url_type: UrlType, url: &Uri) {
+        match url_type {
+            UrlType::Chat => self.chat_urls.write().unwrap().retain(|u| u != url),
+            UrlType::Image => self.image_urls.write().unwrap().retain(|u| u != url),
+        }
+    }
+}
+
+enum UrlType {
+    Chat,
+    Image,
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -27,22 +59,20 @@ async fn main() {
     // Create a shared HTTP client
     let client = Arc::new(Client::new());
 
-    let app_state = AppState {
-        client,
-        chat_urls: vec![
-            "http://localhost:12345".parse().unwrap(),
-            "http://localhost:12346".parse().unwrap(),
-        ],
-        image_urls: vec![
-            "http://localhost:12306".parse().unwrap(),
-            "http://localhost:12307".parse().unwrap(),
-        ],
-    };
+    let app_state = AppState::new(client);
+
+    // // Add initial URLs
+    // app_state.add_url(UrlType::Chat, "http://localhost:12345".parse().unwrap());
+    // app_state.add_url(UrlType::Chat, "http://localhost:12346".parse().unwrap());
+    // app_state.add_url(UrlType::Image, "http://localhost:12306".parse().unwrap());
+    // app_state.add_url(UrlType::Image, "http://localhost:12307".parse().unwrap());
 
     // Build our application with routes
     let app = Router::new()
         .route("/v1/chat/completions", post(chat_handler))
         .route("/v1/image/generation", post(image_handler))
+        .route("/admin/register/:type", post(add_url_handler))
+        .route("/admin/unregister/:type", post(remove_url_handler))
         .with_state(app_state);
 
     // Run it
@@ -67,6 +97,8 @@ async fn chat_handler(
     // Choose a chat URL (for now, just use the first one)
     let chat_url = state
         .chat_urls
+        .read()
+        .unwrap()
         .first()
         .cloned()
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
@@ -82,6 +114,8 @@ async fn image_handler(
     // Choose an image URL (for now, just use the first one)
     let image_url = state
         .image_urls
+        .read()
+        .unwrap()
         .first()
         .cloned()
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
@@ -109,7 +143,7 @@ async fn proxy_request(
         .parse()
         .unwrap();
 
-    println!("new_uri: {}", new_uri);
+    println!("dispatch the chat request to {}", new_uri);
 
     *req.uri_mut() = new_uri;
 
@@ -118,4 +152,48 @@ async fn proxy_request(
         Ok(res) => Ok(res),
         Err(_) => Err(StatusCode::BAD_GATEWAY),
     }
+}
+
+async fn add_url_handler(
+    State(state): State<AppState>,
+    Path(url_type): Path<String>,
+    body: String,
+) -> Result<StatusCode, StatusCode> {
+    println!("In add_url_handler");
+    println!("url_type: {}", url_type);
+    println!("body: {}", &body);
+
+    let url_type = match url_type.as_str() {
+        "chat" => UrlType::Chat,
+        "image" => UrlType::Image,
+        _ => return Err(StatusCode::BAD_REQUEST),
+    };
+
+    let url: Uri = body.parse().map_err(|_| StatusCode::BAD_REQUEST)?;
+    state.add_url(url_type, &url);
+
+    println!("registered {}", url);
+
+    Ok(StatusCode::OK)
+}
+
+async fn remove_url_handler(
+    State(state): State<AppState>,
+    Path(url_type): Path<String>,
+    body: String,
+) -> Result<StatusCode, StatusCode> {
+    println!("In remove_url_handler");
+
+    let url_type = match url_type.as_str() {
+        "chat" => UrlType::Chat,
+        "image" => UrlType::Image,
+        _ => return Err(StatusCode::BAD_REQUEST),
+    };
+
+    let url: Uri = body.parse().map_err(|_| StatusCode::BAD_REQUEST)?;
+    state.remove_url(url_type, &url);
+
+    println!("unregistered {}", url);
+
+    Ok(StatusCode::OK)
 }

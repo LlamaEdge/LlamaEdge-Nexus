@@ -15,6 +15,7 @@ wasi-logger = { version = "0.1.2", features = ["kv"] }
 async-trait = "0.1.82"
 clap = { version = "4.4.6", features = ["cargo", "derive"] }
 anyhow = "1"
+thiserror = "1"
 serde = { version = "1.0", features = ["derive"] }
 
 [patch.crates-io]

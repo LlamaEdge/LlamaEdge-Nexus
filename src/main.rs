@@ -1,6 +1,8 @@
 #[macro_use]
 extern crate log;
 
+use async_trait::async_trait;
+use axum::extract::Extension;
 use axum::{
     body::{Body, Bytes},
     extract::{Path, State},
@@ -10,27 +12,49 @@ use axum::{
 };
 use hyper::{client::HttpConnector, Client};
 use serde_json::Value;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::RwLock;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
 
-use axum::extract::Extension;
-use std::sync::RwLock;
-
 type SharedClient = Arc<Client<HttpConnector>>;
+
+#[async_trait]
+pub trait RoutingPolicy {
+    fn next(&self) -> Uri;
+}
+
+#[derive(Debug, Default)]
+struct Services {
+    servers: RwLock<Vec<Uri>>,
+    idx: AtomicUsize,
+}
+impl Services {
+    fn push(&mut self, url: Uri) {
+        self.servers.write().unwrap().push(url)
+    }
+}
+impl RoutingPolicy for Services {
+    fn next(&self) -> Uri {
+        let servers = self.servers.read().unwrap();
+        let idx = self.idx.fetch_add(1, Ordering::Relaxed);
+        servers.get(idx % servers.len()).unwrap().clone()
+    }
+}
 
 #[derive(Clone)]
 struct AppState {
     client: SharedClient,
-    chat_urls: Arc<RwLock<Vec<Uri>>>,
-    image_urls: Arc<RwLock<Vec<Uri>>>,
+    chat_urls: Arc<RwLock<Services>>,
+    image_urls: Arc<RwLock<Services>>,
 }
 
 impl AppState {
     fn new(client: SharedClient) -> Self {
         Self {
             client,
-            chat_urls: Arc::new(RwLock::new(Vec::new())),
-            image_urls: Arc::new(RwLock::new(Vec::new())),
+            chat_urls: Arc::new(RwLock::new(Services::default())),
+            image_urls: Arc::new(RwLock::new(Services::default())),
         }
     }
 
@@ -38,13 +62,29 @@ impl AppState {
         match url_type {
             UrlType::Chat => self.chat_urls.write().unwrap().push(url.clone()),
             UrlType::Image => self.image_urls.write().unwrap().push(url.clone()),
+            // UrlType::Chat => self.chat_urls.write().unwrap().push(url.clone()),
+            // UrlType::Image => self.image_urls.write().unwrap().push(url.clone()),
         }
     }
 
     fn remove_url(&self, url_type: UrlType, url: &Uri) {
         match url_type {
-            UrlType::Chat => self.chat_urls.write().unwrap().retain(|u| u != url),
-            UrlType::Image => self.image_urls.write().unwrap().retain(|u| u != url),
+            UrlType::Chat => self
+                .chat_urls
+                .write()
+                .unwrap()
+                .servers
+                .write()
+                .unwrap()
+                .retain(|u| u != url),
+            UrlType::Image => self
+                .image_urls
+                .write()
+                .unwrap()
+                .servers
+                .write()
+                .unwrap()
+                .retain(|u| u != url),
         }
     }
 }
@@ -60,12 +100,6 @@ async fn main() {
     let client = Arc::new(Client::new());
 
     let app_state = AppState::new(client);
-
-    // // Add initial URLs
-    // app_state.add_url(UrlType::Chat, "http://localhost:12345".parse().unwrap());
-    // app_state.add_url(UrlType::Chat, "http://localhost:12346".parse().unwrap());
-    // app_state.add_url(UrlType::Image, "http://localhost:12306".parse().unwrap());
-    // app_state.add_url(UrlType::Image, "http://localhost:12307".parse().unwrap());
 
     // Build our application with routes
     let app = Router::new()
@@ -94,14 +128,9 @@ async fn chat_handler(
 ) -> Result<Response<Body>, StatusCode> {
     println!("In chat_handler");
 
-    // Choose a chat URL (for now, just use the first one)
-    let chat_url = state
-        .chat_urls
-        .read()
-        .unwrap()
-        .first()
-        .cloned()
-        .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+    // TODO use round-robin policy to decide which chat url to dispatch to
+    let chat_url = state.chat_urls.read().unwrap().next();
+
     proxy_request(state.client, req, chat_url).await
 }
 
@@ -111,14 +140,8 @@ async fn image_handler(
 ) -> Result<Response<Body>, StatusCode> {
     println!("In image_handler");
 
-    // Choose an image URL (for now, just use the first one)
-    let image_url = state
-        .image_urls
-        .read()
-        .unwrap()
-        .first()
-        .cloned()
-        .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+    let image_url = state.image_urls.read().unwrap().next();
+
     proxy_request(state.client, req, image_url).await
 }
 

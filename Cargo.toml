@@ -12,6 +12,7 @@ hyper = { version = "0.14", features = ["full"] }
 serde_json = "1.0"
 log = { version = "0.4.21", features = ["std", "kv", "kv_serde"] }
 wasi-logger = { version = "0.1.2", features = ["kv"] }
+async-trait = "0.1.82"
 
 [patch.crates-io]
 tokio = { git = "https://github.com/second-state/wasi_tokio.git", branch = "v1.36.x" }

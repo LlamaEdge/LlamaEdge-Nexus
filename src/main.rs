@@ -12,6 +12,7 @@ use axum::{
 };
 use hyper::{client::HttpConnector, Client};
 use serde_json::Value;
+use std::fmt::{self, write};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::RwLock;
 use std::{net::SocketAddr, sync::Arc};
@@ -24,21 +25,44 @@ pub trait RoutingPolicy {
     fn next(&self) -> Uri;
 }
 
+#[derive(Debug)]
+struct Server {
+    url: Uri,
+    connections: AtomicUsize,
+}
+impl Server {
+    fn new(url: Uri) -> Self {
+        Self {
+            url,
+            connections: AtomicUsize::new(0),
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 struct Services {
-    servers: RwLock<Vec<Uri>>,
-    idx: AtomicUsize,
+    servers: RwLock<Vec<Server>>,
 }
 impl Services {
     fn push(&mut self, url: Uri) {
-        self.servers.write().unwrap().push(url)
+        let server = Server::new(url);
+        self.servers.write().unwrap().push(server)
     }
 }
 impl RoutingPolicy for Services {
     fn next(&self) -> Uri {
         let servers = self.servers.read().unwrap();
-        let idx = self.idx.fetch_add(1, Ordering::Relaxed);
-        servers.get(idx % servers.len()).unwrap().clone()
+        let server = servers
+            .iter()
+            .min_by(|s1, s2| {
+                s1.connections
+                    .load(Ordering::Relaxed)
+                    .cmp(&s2.connections.load(Ordering::Relaxed))
+            })
+            .unwrap();
+
+        server.connections.fetch_add(1, Ordering::Relaxed);
+        server.url.clone()
     }
 }
 
@@ -68,30 +92,35 @@ impl AppState {
     }
 
     fn remove_url(&self, url_type: UrlType, url: &Uri) {
-        match url_type {
-            UrlType::Chat => self
-                .chat_urls
-                .write()
-                .unwrap()
-                .servers
-                .write()
-                .unwrap()
-                .retain(|u| u != url),
-            UrlType::Image => self
-                .image_urls
-                .write()
-                .unwrap()
-                .servers
-                .write()
-                .unwrap()
-                .retain(|u| u != url),
-        }
+        let services = match &url_type {
+            UrlType::Chat => &self.chat_urls,
+            UrlType::Image => &self.image_urls,
+        };
+
+        let services = services.write().unwrap();
+        services
+            .servers
+            .write()
+            .unwrap()
+            .retain(|server| &server.url != url);
+
+        // Optionally, log the removal
+        println!("Removed {} URL: {}", url_type, url);
     }
 }
 
+#[derive(Debug)]
 enum UrlType {
     Chat,
     Image,
+}
+impl fmt::Display for UrlType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            UrlType::Chat => write!(f, "Chat"),
+            UrlType::Image => write!(f, "Image"),
+        }
+    }
 }
 
 #[tokio::main(flavor = "current_thread")]

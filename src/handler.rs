@@ -16,6 +16,17 @@ pub(crate) async fn chat_handler(
     proxy_request(state.client, req, chat_url).await
 }
 
+pub(crate) async fn audio_handler(
+    State(state): State<AppState>,
+    req: Request<Body>,
+) -> Result<Response<Body>, StatusCode> {
+    println!("In audio_handler");
+
+    let audio_url = state.audio_urls.read().unwrap().next();
+
+    proxy_request(state.client, req, audio_url).await
+}
+
 pub(crate) async fn image_handler(
     State(state): State<AppState>,
     req: Request<Body>,
@@ -70,6 +81,7 @@ pub(crate) async fn add_url_handler(
 
     let url_type = match url_type.as_str() {
         "chat" => UrlType::Chat,
+        "audio" => UrlType::Audio,
         "image" => UrlType::Image,
         _ => return Err(StatusCode::BAD_REQUEST),
     };
@@ -91,6 +103,7 @@ pub(crate) async fn remove_url_handler(
 
     let url_type = match url_type.as_str() {
         "chat" => UrlType::Chat,
+        "audio" => UrlType::Audio,
         "image" => UrlType::Image,
         _ => return Err(StatusCode::BAD_REQUEST),
     };

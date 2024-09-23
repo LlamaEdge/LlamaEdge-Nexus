@@ -8,14 +8,18 @@ mod utils;
 use anyhow::Result;
 use async_trait::async_trait;
 use axum::{http::Uri, routing::post, Router};
-use clap::Parser;
+use clap::{ArgGroup, Parser};
 use error::ServerError;
 use handler::*;
 use hyper::{client::HttpConnector, Client};
-use std::fmt;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
-use std::sync::RwLock;
+use std::{
+    fmt,
+    net::SocketAddr,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, RwLock,
+    },
+};
 use tokio::net::TcpListener;
 use utils::LogLevel;
 
@@ -26,9 +30,13 @@ const DEFAULT_PORT: &str = "8080";
 
 #[derive(Debug, Parser)]
 #[command(name = "LlamaEdge Gateway", version = env!("CARGO_PKG_VERSION"), author = env!("CARGO_PKG_AUTHORS"), about = "LlamaEdge Gateway")]
+#[command(group = ArgGroup::new("socket_address_group").multiple(false).args(&["socket_addr", "port"]))]
 struct Cli {
+    /// Socket address of Llama-Gateway instance. For example, `0.0.0.0:8080`.
+    #[arg(long, default_value = None, value_parser = clap::value_parser!(SocketAddr), group = "socket_address_group")]
+    socket_addr: Option<SocketAddr>,
     /// Socket address of LlamaEdge API Server instance
-    #[arg(long, default_value = DEFAULT_PORT, value_parser = clap::value_parser!(u16))]
+    #[arg(long, default_value = DEFAULT_PORT, value_parser = clap::value_parser!(u16), group = "socket_address_group")]
     port: u16,
 }
 
@@ -62,16 +70,22 @@ async fn main() -> Result<(), ServerError> {
     // Build our application with routes
     let app = Router::new()
         .route("/v1/chat/completions", post(chat_handler))
-        .route("/v1/image/generation", post(image_handler))
+        .route("/v1/audio/transcriptions", post(audio_handler))
+        .route("/v1/audio/translations", post(audio_handler))
+        .route("/v1/images/generations", post(image_handler))
         .route("/admin/register/:type", post(add_url_handler))
         .route("/admin/unregister/:type", post(remove_url_handler))
         .with_state(app_state);
 
-    // Run it
-    let addr = format!("127.0.0.1:{}", cli.port);
-    let tcp_listener = TcpListener::bind(&addr).await.unwrap();
+    // socket address
+    let addr = match cli.socket_addr {
+        Some(addr) => addr,
+        None => SocketAddr::from(([0, 0, 0, 0], cli.port)),
+    };
+    let tcp_listener = TcpListener::bind(addr).await.unwrap();
     info!(target: "stdout", "Listening on {}", addr);
 
+    // run
     match axum::Server::from_tcp(tcp_listener.into_std().unwrap())
         .unwrap()
         .serve(app.into_make_service())
@@ -133,6 +147,7 @@ impl RoutingPolicy for Services {
 struct AppState {
     client: SharedClient,
     chat_urls: Arc<RwLock<Services>>,
+    audio_urls: Arc<RwLock<Services>>,
     image_urls: Arc<RwLock<Services>>,
 }
 
@@ -141,6 +156,7 @@ impl AppState {
         Self {
             client,
             chat_urls: Arc::new(RwLock::new(Services::default())),
+            audio_urls: Arc::new(RwLock::new(Services::default())),
             image_urls: Arc::new(RwLock::new(Services::default())),
         }
     }
@@ -148,15 +164,15 @@ impl AppState {
     fn add_url(&self, url_type: UrlType, url: &Uri) {
         match url_type {
             UrlType::Chat => self.chat_urls.write().unwrap().push(url.clone()),
+            UrlType::Audio => self.audio_urls.write().unwrap().push(url.clone()),
             UrlType::Image => self.image_urls.write().unwrap().push(url.clone()),
-            // UrlType::Chat => self.chat_urls.write().unwrap().push(url.clone()),
-            // UrlType::Image => self.image_urls.write().unwrap().push(url.clone()),
         }
     }
 
     fn remove_url(&self, url_type: UrlType, url: &Uri) {
         let services = match &url_type {
             UrlType::Chat => &self.chat_urls,
+            UrlType::Audio => &self.audio_urls,
             UrlType::Image => &self.image_urls,
         };
 
@@ -174,6 +190,7 @@ impl AppState {
 
 #[derive(Debug)]
 enum UrlType {
+    Audio,
     Chat,
     Image,
 }
@@ -181,6 +198,7 @@ impl fmt::Display for UrlType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             UrlType::Chat => write!(f, "Chat"),
+            UrlType::Audio => write!(f, "Audio"),
             UrlType::Image => write!(f, "Image"),
         }
     }

@@ -37,7 +37,7 @@ jobs:
       matrix:
         wasmedge_version: [0.14.1]
         llama_api_server_version: [0.14.4]
-        whisper_api_server_version: [0.2.2]
+        whisper_api_server_version: [0.3.0]
 
     steps:
       - name: Clone project
@@ -61,6 +61,24 @@ jobs:
           curl -sSf https://raw.githubusercontent.com/WasmEdge/WasmEdge/master/utils/install_v2.sh | bash -s -- -v ${{ matrix.wasmedge_version }}
           ls -al $HOME/.wasmedge/bin
 
+      - name: Deploy whisper plugin
+        run: |
+          curl -LO https://github.com/WasmEdge/WasmEdge/releases/download/${{ matrix.wasmedge_version }}/WasmEdge-plugin-wasi_nn-whisper-${{ matrix.wasmedge_version }}-ubuntu20.04_x86_64.tar.gz
+          tar -xzvf WasmEdge-plugin-wasi_nn-whisper-${{ matrix.wasmedge_version }}-ubuntu20.04_x86_64.tar.gz
+          mkdir -p $HOME/whisper/plugin/
+          ls -al
+
+          mv libwasmedgePluginWasiNN.so $HOME/whisper/plugin/
+          ls -al $HOME/whisper/plugin/
+
+      - name: Build llama-gateway
+        env:
+          RUSTFLAGS: "--cfg wasmedge --cfg tokio_unstable"
+        run: |
+          cargo build --release
+          cp target/wasm32-wasip1/release/llama-gateway.wasm .
+          ls -al
+
       - name: Install Hurl
         run: |
           curl --location --remote-name https://github.com/Orange-OpenSource/hurl/releases/download/5.0.1/hurl_5.0.1_amd64.deb
@@ -73,23 +91,46 @@ jobs:
 
       - name: Download model used by llama-api-server
         run: |
-          curl -LO https://huggingface.co/second-state/Qwen2-1.5B-Instruct-GGUF/resolve/main/Qwen2-1.5B-Instruct-Q3_K_M.gguf
+          curl -LO https://huggingface.co/second-state/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/Qwen2.5-0.5B-Instruct-Q5_K_M.gguf
           ls -al
 
-      - name: Download model and audio files
+      - name: Download whisper model and audio files
         run: |
           curl -LO https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin
+          curl -LO https://github.com/LlamaEdge/whisper-api-server/raw/refs/heads/main/data/test.wav
           ls -al
+          mv test.wav ./tests/
 
-    #   - name: Start llama-api-server at 10086 port
-    #     run: |
-    #       nohup $HOME/.wasmedge/bin/wasmedge --dir .:. --nn-preload default:GGML:AUTO:Qwen2-1.5B-Instruct-Q3_K_M.gguf llama-api-server.wasm --model-name Qwen2-1.5B-Instruct --prompt-template chatml --ctx-size 4096 --socket-addr 0.0.0.0:10086 > ./start-llama.log 2>&1 &
-    #       sleep 5
-    #       cat start-llama.log
+      - name: Start llama-api-server at 10086 port
+        run: |
+          nohup $HOME/.wasmedge/bin/wasmedge --dir .:. --nn-preload default:GGML:AUTO:Qwen2.5-0.5B-Instruct-Q5_K_M.gguf llama-api-server.wasm --model-name Qwen2.5-0.5B-Instruct --prompt-template chatml --ctx-size 4096 --socket-addr 0.0.0.0:10086 > ./start-llama.log 2>&1 &
+          sleep 5
+          cat start-llama.log
 
-    #   - name: Start whisper-api-server at 10087 port
-    #     run: |
-    #       nohup $HOME/.wasmedge/bin/wasmedge --dir .:. whisper-api-server.wasm -m ggml-medium.bin --socket-addr 0.0.0.0:10087 > ./start-llamaedge.log 2>&1 &
-    #       sleep 5
-    #       cat start-llamaedge.log
+      - name: Start whisper-api-server at 10087 port
+        run: |
+          WASMEDGE_PLUGIN_PATH=~/whisper/plugin nohup $HOME/.wasmedge/bin/wasmedge --dir .:. whisper-api-server.wasm -m ggml-medium.bin --socket-addr 0.0.0.0:10087 > ./start-llamaedge.log 2>&1 &
+          sleep 5
+          cat start-llamaedge.log
 
+      - name: Start llama-gateway at a8080 port
+        run: |
+          nohup $HOME/.wasmedge/bin/wasmedge llama-gateway.wasm --port 8080 > ./start-gateway.log 2>&1 &
+          sleep 5
+          cat start-gateway.log
+
+      - name: register servers
+        run: |
+          # register llama-api-server
+          curl --location 'http://localhost:8080/admin/register/chat' --header 'Content-Type: text/plain' --data 'http://localhost:10086'
+          # register whisper-api-server
+          curl --location 'http://localhost:8080/admin/register/audio' --header 'Content-Type: text/plain' --data 'http://localhost:10087'
+          cat start-gateway.log
+
+      - name: Run test
+        run: |
+          hurl --test tests/*.hurl
+
+      - name: Stop api-server
+        run: |
+          pkill -f wasmedge

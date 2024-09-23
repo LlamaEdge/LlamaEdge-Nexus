@@ -98,7 +98,7 @@ async fn main() -> Result<(), ServerError> {
 
 #[async_trait]
 trait RoutingPolicy {
-    fn next(&self) -> Uri;
+    fn next(&self) -> Result<Uri, ServerError>;
 }
 
 /// Represents a LlamaEdge API server
@@ -127,19 +127,27 @@ impl Services {
     }
 }
 impl RoutingPolicy for Services {
-    fn next(&self) -> Uri {
+    fn next(&self) -> Result<Uri, ServerError> {
+        if self.servers.read().unwrap().is_empty() {
+            return Err(ServerError::NotFoundServer);
+        }
+
         let servers = self.servers.read().unwrap();
-        let server = servers
-            .iter()
-            .min_by(|s1, s2| {
-                s1.connections
-                    .load(Ordering::Relaxed)
-                    .cmp(&s2.connections.load(Ordering::Relaxed))
-            })
-            .unwrap();
+        let server = if servers.len() == 1 {
+            servers.first().unwrap()
+        } else {
+            servers
+                .iter()
+                .min_by(|s1, s2| {
+                    s1.connections
+                        .load(Ordering::Relaxed)
+                        .cmp(&s2.connections.load(Ordering::Relaxed))
+                })
+                .unwrap()
+        };
 
         server.connections.fetch_add(1, Ordering::Relaxed);
-        server.url.clone()
+        Ok(server.url.clone())
     }
 }
 

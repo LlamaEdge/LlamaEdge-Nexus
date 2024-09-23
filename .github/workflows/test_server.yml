@@ -129,7 +129,7 @@ jobs:
 
       - name: Run test
         run: |
-          hurl --test tests/*.hurl
+          hurl --test --repeat 10 tests/*.hurl
 
       - name: Stop api-server
         run: |

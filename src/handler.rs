@@ -1,4 +1,4 @@
-use crate::{AppState, RoutingPolicy, SharedClient, UrlType};
+use crate::{error, AppState, RoutingPolicy, SharedClient, UrlType};
 use axum::{
     body::Body,
     extract::{Path, State},
@@ -9,33 +9,51 @@ pub(crate) async fn chat_handler(
     State(state): State<AppState>,
     req: Request<Body>,
 ) -> Result<Response<Body>, StatusCode> {
-    println!("In chat_handler");
+    info!(target: "stdout", "handling chat request");
 
     let chat_url = state.chat_urls.read().unwrap().next();
 
-    proxy_request(state.client, req, chat_url).await
+    if let Err(e) = chat_url {
+        let err_msg = e.to_string();
+        info!(target: "stdout", "{}", &err_msg);
+        return Ok(error::internal_server_error(&err_msg));
+    }
+
+    proxy_request(state.client, req, chat_url.unwrap()).await
 }
 
 pub(crate) async fn audio_handler(
     State(state): State<AppState>,
     req: Request<Body>,
 ) -> Result<Response<Body>, StatusCode> {
-    println!("In audio_handler");
+    info!(target: "stdout", "handling audio request");
 
     let audio_url = state.audio_urls.read().unwrap().next();
 
-    proxy_request(state.client, req, audio_url).await
+    if let Err(e) = audio_url {
+        let err_msg = e.to_string();
+        info!(target: "stdout", "{}", &err_msg);
+        return Ok(error::internal_server_error(&err_msg));
+    }
+
+    proxy_request(state.client, req, audio_url.unwrap()).await
 }
 
 pub(crate) async fn image_handler(
     State(state): State<AppState>,
     req: Request<Body>,
 ) -> Result<Response<Body>, StatusCode> {
-    println!("In image_handler");
+    info!(target: "stdout", "handling image request");
 
     let image_url = state.image_urls.read().unwrap().next();
 
-    proxy_request(state.client, req, image_url).await
+    if let Err(e) = image_url {
+        let err_msg = e.to_string();
+        info!(target: "stdout", "{}", &err_msg);
+        return Ok(error::internal_server_error(&err_msg));
+    }
+
+    proxy_request(state.client, req, image_url.unwrap()).await
 }
 
 pub(crate) async fn proxy_request(

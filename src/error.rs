@@ -78,6 +78,8 @@ pub(crate) fn invalid_endpoint(msg: impl AsRef<str>) -> Response<Body> {
 #[allow(dead_code)]
 #[derive(Error, Clone, Debug, PartialEq, Eq)]
 pub enum ServerError {
+    #[error("Not found available server")]
+    NotFoundServer,
     /// Error returned while parsing socket address failed
     #[error("Failed to parse socket address: {0}")]
     SocketAddr(String),

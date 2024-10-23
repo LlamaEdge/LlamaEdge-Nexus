@@ -178,7 +178,7 @@ pub(crate) async fn remove_url_handler(
     let url: Uri = body.parse().map_err(|_| StatusCode::BAD_REQUEST)?;
     if let Err(e) = state.remove_url(url_type, &url).await {
         let err_msg = e.to_string();
-        info!(target: "stdout", "{}", &err_msg);
+        error!(target: "stdout", "{}", &err_msg);
         return Ok(error::internal_server_error(&err_msg));
     }
 

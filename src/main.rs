@@ -211,11 +211,17 @@ impl AppState {
         };
 
         let services = services.write().await;
+        let before = services.servers.read().await.len();
         services
             .servers
             .write()
             .await
             .retain(|server| &server.url != url);
+        let after = services.servers.read().await.len();
+
+        if before == after {
+            return Err(ServerError::NotFoundServer(url_type.to_string()));
+        }
 
         // Optionally, log the removal
         info!(target: "stdout", "Removed {} URL: {}", url_type, url);

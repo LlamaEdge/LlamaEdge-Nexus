@@ -22,11 +22,11 @@ pub(crate) async fn chat_handler(
     proxy_request(state.client, req, chat_url.unwrap()).await
 }
 
-pub(crate) async fn audio_handler(
+pub(crate) async fn audio_whisper_handler(
     State(state): State<AppState>,
     req: Request<Body>,
 ) -> Result<Response<Body>, StatusCode> {
-    info!(target: "stdout", "handling audio request");
+    info!(target: "stdout", "handling audio whisper request");
 
     let audio_url = state.audio_urls.read().unwrap().next();
 

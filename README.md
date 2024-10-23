@@ -2,13 +2,24 @@
 
 Llama-proxy-server serves as a proxy server for LLM APIs.
 
+> [!NOTE]
+> The project is still under active development. The existing features still need to be improved and more features will be added in the future.
+
 ## Usage
 
 ### Start llama-proxy-server
 
-```bash
-wasmedge llama-proxy-server.wasm --port 10086
-```
+- Download llama-proxy-server
+
+  ```bash
+  curl -LO https://github.com/LlamaEdge/llama-proxy-server/releases/latest/download/llama-proxy-server.wasm
+  ```
+
+- Start llama-proxy-server
+
+  ```bash
+  wasmedge llama-proxy-server.wasm --port 10086
+  ```
 
 > `llama-proxy-server` will use `8080` port by default. You can change the port by adding `--port <port>`.
 

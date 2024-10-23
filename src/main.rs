@@ -13,14 +13,15 @@ use error::ServerError;
 use handler::*;
 use hyper::{client::HttpConnector, Client};
 use std::{
+    collections::HashMap,
     fmt,
     net::SocketAddr,
     sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc, RwLock,
+        Arc,
     },
 };
-use tokio::net::TcpListener;
+use tokio::{net::TcpListener, sync::RwLock};
 use utils::LogLevel;
 
 type SharedClient = Arc<Client<HttpConnector>>;
@@ -40,6 +41,7 @@ struct Cli {
     port: u16,
 }
 
+#[allow(clippy::needless_return)]
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), ServerError> {
     // get the environment variable `RUST_LOG`
@@ -81,6 +83,7 @@ async fn main() -> Result<(), ServerError> {
         .route("/v1/images/edits", post(image_handler))
         .route("/admin/register/:type", post(add_url_handler))
         .route("/admin/unregister/:type", post(remove_url_handler))
+        .route("/admin/servers", post(list_downstream_servers_handler))
         .with_state(app_state);
 
     // socket address
@@ -103,8 +106,8 @@ async fn main() -> Result<(), ServerError> {
 }
 
 #[async_trait]
-trait RoutingPolicy {
-    fn next(&self) -> Result<Uri, ServerError>;
+trait RoutingPolicy: Sync + Send {
+    async fn next(&self) -> Result<Uri, ServerError>;
 }
 
 /// Represents a LlamaEdge API server
@@ -122,23 +125,36 @@ impl Server {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct Services {
     servers: RwLock<Vec<Server>>,
+    ty: UrlType,
 }
 impl Services {
-    fn push(&mut self, url: Uri) {
+    fn new(ty: UrlType) -> Self {
+        Self {
+            servers: RwLock::new(Vec::new()),
+            ty,
+        }
+    }
+
+    fn ty(&self) -> UrlType {
+        self.ty.clone()
+    }
+
+    async fn push(&mut self, url: Uri) {
         let server = Server::new(url);
-        self.servers.write().unwrap().push(server)
+        self.servers.write().await.push(server)
     }
 }
+#[async_trait]
 impl RoutingPolicy for Services {
-    fn next(&self) -> Result<Uri, ServerError> {
-        if self.servers.read().unwrap().is_empty() {
-            return Err(ServerError::NotFoundServer);
+    async fn next(&self) -> Result<Uri, ServerError> {
+        if self.servers.read().await.is_empty() {
+            return Err(ServerError::NotFoundServer(self.ty().to_string()));
         }
 
-        let servers = self.servers.read().unwrap();
+        let servers = self.servers.read().await;
         let server = if servers.len() == 1 {
             servers.first().unwrap()
         } else {
@@ -169,51 +185,97 @@ impl AppState {
     fn new(client: SharedClient) -> Self {
         Self {
             client,
-            chat_urls: Arc::new(RwLock::new(Services::default())),
-            audio_urls: Arc::new(RwLock::new(Services::default())),
-            image_urls: Arc::new(RwLock::new(Services::default())),
+            chat_urls: Arc::new(RwLock::new(Services::new(UrlType::Chat))),
+            audio_urls: Arc::new(RwLock::new(Services::new(UrlType::AudioWhisper))),
+            image_urls: Arc::new(RwLock::new(Services::new(UrlType::Image))),
         }
     }
 
-    fn add_url(&self, url_type: UrlType, url: &Uri) {
-        match url_type {
-            UrlType::Chat => self.chat_urls.write().unwrap().push(url.clone()),
-            UrlType::Audio => self.audio_urls.write().unwrap().push(url.clone()),
-            UrlType::Image => self.image_urls.write().unwrap().push(url.clone()),
-        }
+    async fn add_url(&self, url_type: UrlType, url: &Uri) -> Result<(), ServerError> {
+        let mut services = match url_type {
+            UrlType::Chat => self.chat_urls.write().await,
+            UrlType::AudioWhisper => self.audio_urls.write().await,
+            UrlType::Image => self.image_urls.write().await,
+        };
+
+        services.push(url.clone()).await;
+
+        Ok(())
     }
 
-    fn remove_url(&self, url_type: UrlType, url: &Uri) {
+    async fn remove_url(&self, url_type: UrlType, url: &Uri) -> Result<(), ServerError> {
         let services = match &url_type {
             UrlType::Chat => &self.chat_urls,
-            UrlType::Audio => &self.audio_urls,
+            UrlType::AudioWhisper => &self.audio_urls,
             UrlType::Image => &self.image_urls,
         };
 
-        let services = services.write().unwrap();
+        let services = services.write().await;
         services
             .servers
             .write()
-            .unwrap()
+            .await
             .retain(|server| &server.url != url);
 
         // Optionally, log the removal
-        println!("Removed {} URL: {}", url_type, url);
+        info!(target: "stdout", "Removed {} URL: {}", url_type, url);
+
+        Ok(())
+    }
+
+    async fn list_downstream_servers(&self) -> HashMap<String, Vec<String>> {
+        let chat_servers = self
+            .chat_urls
+            .read()
+            .await
+            .servers
+            .read()
+            .await
+            .iter()
+            .map(|s| s.url.to_string())
+            .collect();
+        let whisper_servers = self
+            .audio_urls
+            .read()
+            .await
+            .servers
+            .read()
+            .await
+            .iter()
+            .map(|s| s.url.to_string())
+            .collect();
+        let image_servers = self
+            .image_urls
+            .read()
+            .await
+            .servers
+            .read()
+            .await
+            .iter()
+            .map(|s| s.url.to_string())
+            .collect();
+
+        let mut servers = HashMap::new();
+        servers.insert("chat".to_string(), chat_servers);
+        servers.insert("whisper".to_string(), whisper_servers);
+        servers.insert("image".to_string(), image_servers);
+
+        servers
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 enum UrlType {
-    Audio,
+    AudioWhisper,
     Chat,
     Image,
 }
 impl fmt::Display for UrlType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            UrlType::Chat => write!(f, "Chat"),
-            UrlType::Audio => write!(f, "Audio"),
-            UrlType::Image => write!(f, "Image"),
+            UrlType::Chat => write!(f, "chat"),
+            UrlType::AudioWhisper => write!(f, "whisper"),
+            UrlType::Image => write!(f, "image"),
         }
     }
 }

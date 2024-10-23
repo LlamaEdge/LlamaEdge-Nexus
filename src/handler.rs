@@ -11,15 +11,16 @@ pub(crate) async fn chat_handler(
 ) -> Result<Response<Body>, StatusCode> {
     info!(target: "stdout", "handling chat request");
 
-    let chat_url = state.chat_urls.read().unwrap().next();
+    let chat_url = match state.chat_urls.read().await.next().await {
+        Ok(url) => url,
+        Err(e) => {
+            let err_msg = e.to_string();
+            info!(target: "stdout", "{}", &err_msg);
+            return Ok(error::internal_server_error(&err_msg));
+        }
+    };
 
-    if let Err(e) = chat_url {
-        let err_msg = e.to_string();
-        info!(target: "stdout", "{}", &err_msg);
-        return Ok(error::internal_server_error(&err_msg));
-    }
-
-    proxy_request(state.client, req, chat_url.unwrap()).await
+    proxy_request(state.client, req, chat_url).await
 }
 
 pub(crate) async fn audio_whisper_handler(
@@ -28,15 +29,16 @@ pub(crate) async fn audio_whisper_handler(
 ) -> Result<Response<Body>, StatusCode> {
     info!(target: "stdout", "handling audio whisper request");
 
-    let audio_url = state.audio_urls.read().unwrap().next();
+    let audio_url = match state.audio_urls.read().await.next().await {
+        Ok(url) => url,
+        Err(e) => {
+            let err_msg = e.to_string();
+            info!(target: "stdout", "{}", &err_msg);
+            return Ok(error::internal_server_error(&err_msg));
+        }
+    };
 
-    if let Err(e) = audio_url {
-        let err_msg = e.to_string();
-        info!(target: "stdout", "{}", &err_msg);
-        return Ok(error::internal_server_error(&err_msg));
-    }
-
-    proxy_request(state.client, req, audio_url.unwrap()).await
+    proxy_request(state.client, req, audio_url).await
 }
 
 pub(crate) async fn image_handler(
@@ -45,46 +47,67 @@ pub(crate) async fn image_handler(
 ) -> Result<Response<Body>, StatusCode> {
     info!(target: "stdout", "handling image request");
 
-    let image_url = state.image_urls.read().unwrap().next();
+    let image_url = match state.image_urls.read().await.next().await {
+        Ok(url) => url,
+        Err(e) => {
+            let err_msg = e.to_string();
+            info!(target: "stdout", "{}", &err_msg);
+            return Ok(error::internal_server_error(&err_msg));
+        }
+    };
 
-    if let Err(e) = image_url {
-        let err_msg = e.to_string();
-        info!(target: "stdout", "{}", &err_msg);
-        return Ok(error::internal_server_error(&err_msg));
-    }
-
-    proxy_request(state.client, req, image_url.unwrap()).await
+    proxy_request(state.client, req, image_url).await
 }
 
 pub(crate) async fn proxy_request(
     client: SharedClient,
     mut req: Request<Body>,
-    downstream_url: Uri,
+    downstream_server_socket_addr: Uri,
 ) -> Result<Response<Body>, StatusCode> {
     // Change the request URL to the downstream server
-    let path_and_query = req
-        .uri()
-        .path_and_query()
-        .map(|x| x.to_string())
-        .unwrap_or_default();
-    println!("path_and_query: {}", path_and_query);
+    let endpoint = match req.uri().path_and_query().map(|x| x.to_string()) {
+        Some(endpoint) => endpoint,
+        None => {
+            let err_msg = "failed to parse the endpoint from the request uri";
 
-    let mut downstream_url_s = downstream_url.to_string();
-    downstream_url_s = downstream_url_s.trim_end_matches('/').to_string();
-    println!("downstream_url_s: {}", downstream_url_s);
+            error!(target: "stdout", "{}", &err_msg);
 
-    let new_uri = format!("{}{}", downstream_url_s, path_and_query)
-        .parse()
-        .unwrap();
+            return Ok(error::internal_server_error(err_msg));
+        }
+    };
+    info!(target: "stdout", "endpoint: {}", &endpoint);
 
-    println!("dispatch the chat request to {}", new_uri);
+    let mut server_socket_addr = downstream_server_socket_addr.to_string();
+    server_socket_addr = server_socket_addr.trim_end_matches('/').to_string();
+
+    let new_uri = match format!("{}{}", server_socket_addr, endpoint).parse::<Uri>() {
+        Ok(url) => url,
+        Err(e) => {
+            let err_msg = format!("failed to parse the downstream server URL: {}", e);
+
+            error!(target: "stdout", "{}", &err_msg);
+
+            return Ok(error::internal_server_error(&err_msg));
+        }
+    };
+
+    info!(target: "stdout", "dispatch the chat request to {}", new_uri);
 
     *req.uri_mut() = new_uri;
 
     // Forward the request to the downstream server
     match client.request(req).await {
         Ok(res) => Ok(res),
-        Err(_) => Err(StatusCode::BAD_GATEWAY),
+        Err(e) => {
+            let err_msg = format!(
+                "failed to forward the request to the downstream server: {}",
+                e
+            );
+
+            error!(target: "stdout", "{}", &err_msg);
+
+            Ok(error::internal_server_error(&err_msg))
+        }
     }
 }
 
@@ -92,44 +115,107 @@ pub(crate) async fn add_url_handler(
     State(state): State<AppState>,
     Path(url_type): Path<String>,
     body: String,
-) -> Result<StatusCode, StatusCode> {
-    println!("In add_url_handler");
-    println!("url_type: {}", url_type);
-    println!("body: {}", &body);
+) -> Result<Response<Body>, StatusCode> {
+    info!(target: "stdout", "In add_url_handler");
+    info!(target: "stdout", "url_type: {}", url_type);
+    info!(target: "stdout", "body: {}", &body);
 
     let url_type = match url_type.as_str() {
         "chat" => UrlType::Chat,
-        "audio" => UrlType::Audio,
+        "whisper" => UrlType::AudioWhisper,
         "image" => UrlType::Image,
-        _ => return Err(StatusCode::BAD_REQUEST),
+        _ => {
+            let err_msg = format!("invalid url type: {}", url_type);
+            error!(target: "stdout", "{}", &err_msg);
+            return Ok(error::internal_server_error(&err_msg));
+        }
     };
 
     let url: Uri = body.parse().map_err(|_| StatusCode::BAD_REQUEST)?;
-    state.add_url(url_type, &url);
+    if let Err(e) = state.add_url(url_type, &url).await {
+        let err_msg = e.to_string();
+        info!(target: "stdout", "{}", &err_msg);
+        return Ok(error::internal_server_error(&err_msg));
+    }
 
-    println!("registered {}", url);
+    info!(target: "stdout", "registered {}", url);
 
-    Ok(StatusCode::OK)
+    // create a response with status code 200. Content-Type is JSON
+    let json_body = serde_json::json!({
+        "message": "URL registered successfully",
+        "url": url.to_string()
+    });
+
+    let response = Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "application/json")
+        .body(Body::from(json_body.to_string()))
+        .unwrap();
+
+    Ok(response)
 }
 
 pub(crate) async fn remove_url_handler(
     State(state): State<AppState>,
     Path(url_type): Path<String>,
     body: String,
-) -> Result<StatusCode, StatusCode> {
-    println!("In remove_url_handler");
+) -> Result<Response<Body>, StatusCode> {
+    info!(target: "stdout", "In remove_url_handler");
+    info!(target: "stdout", "url_type: {}", url_type);
+    info!(target: "stdout", "body: {}", &body);
 
     let url_type = match url_type.as_str() {
         "chat" => UrlType::Chat,
-        "audio" => UrlType::Audio,
+        "whisper" => UrlType::AudioWhisper,
         "image" => UrlType::Image,
-        _ => return Err(StatusCode::BAD_REQUEST),
+        _ => {
+            let err_msg = format!("invalid url type: {}", url_type);
+            error!(target: "stdout", "{}", &err_msg);
+            return Ok(error::internal_server_error(&err_msg));
+        }
     };
 
     let url: Uri = body.parse().map_err(|_| StatusCode::BAD_REQUEST)?;
-    state.remove_url(url_type, &url);
+    if let Err(e) = state.remove_url(url_type, &url).await {
+        let err_msg = e.to_string();
+        info!(target: "stdout", "{}", &err_msg);
+        return Ok(error::internal_server_error(&err_msg));
+    }
 
-    println!("unregistered {}", url);
+    info!(target: "stdout", "unregistered {}", url);
 
-    Ok(StatusCode::OK)
+    // create a response with status code 200. Content-Type is JSON
+    let json_body = serde_json::json!({
+        "message": "URL unregistered successfully",
+        "url": url.to_string()
+    });
+
+    let response = Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "application/json")
+        .body(Body::from(json_body.to_string()))
+        .unwrap();
+
+    Ok(response)
+}
+
+pub(crate) async fn list_downstream_servers_handler(
+    State(state): State<AppState>,
+) -> Result<Response<Body>, StatusCode> {
+    let servers = state.list_downstream_servers().await;
+
+    // create a response with status code 200. Content-Type is JSON
+    let json_body = serde_json::json!({
+        "chat": servers.get("chat").unwrap(),
+        "whisper": servers.get("whisper").unwrap(),
+        "image": servers.get("image").unwrap(),
+    });
+
+    let response = Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "application/json")
+        .body(Body::from(json_body.to_string()))
+        .unwrap();
+
+    Ok(response)
 }

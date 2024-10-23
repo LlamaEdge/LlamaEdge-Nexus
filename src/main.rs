@@ -70,6 +70,11 @@ async fn main() -> Result<(), ServerError> {
     // Build our application with routes
     let app = Router::new()
         .route("/v1/chat/completions", post(chat_handler))
+        .route("/v1/completions", post(chat_handler))
+        .route("/v1/models", post(chat_handler))
+        .route("/v1/embeddings", post(chat_handler))
+        .route("/v1/files", post(chat_handler))
+        .route("/v1/chunks", post(chat_handler))
         .route("/v1/audio/transcriptions", post(audio_whisper_handler))
         .route("/v1/audio/translations", post(audio_whisper_handler))
         .route("/v1/images/generations", post(image_handler))

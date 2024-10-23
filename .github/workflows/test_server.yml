@@ -1,4 +1,4 @@
-name: Test Llama-Gateway
+name: Test llama-proxy-server
 
 on:
   push:
@@ -71,12 +71,12 @@ jobs:
           mv libwasmedgePluginWasiNN.so $HOME/whisper/plugin/
           ls -al $HOME/whisper/plugin/
 
-      - name: Build llama-gateway
+      - name: Build llama-proxy-server
         env:
           RUSTFLAGS: "--cfg wasmedge --cfg tokio_unstable"
         run: |
           cargo build --release
-          cp target/wasm32-wasip1/release/llama-gateway.wasm .
+          cp target/wasm32-wasip1/release/llama-proxy-server.wasm .
           ls -al
 
       - name: Install Hurl
@@ -113,9 +113,9 @@ jobs:
           sleep 5
           cat start-llamaedge.log
 
-      - name: Start llama-gateway at a8080 port
+      - name: Start llama-proxy-server at a8080 port
         run: |
-          nohup $HOME/.wasmedge/bin/wasmedge llama-gateway.wasm --port 8080 > ./start-gateway.log 2>&1 &
+          nohup $HOME/.wasmedge/bin/wasmedge llama-proxy-server.wasm --port 8080 > ./start-gateway.log 2>&1 &
           sleep 5
           cat start-gateway.log
 
@@ -124,7 +124,7 @@ jobs:
           # register llama-api-server
           curl --location 'http://localhost:8080/admin/register/chat' --header 'Content-Type: text/plain' --data 'http://localhost:10086'
           # register whisper-api-server
-          curl --location 'http://localhost:8080/admin/register/audio' --header 'Content-Type: text/plain' --data 'http://localhost:10087'
+          curl --location 'http://localhost:8080/admin/register/whisper' --header 'Content-Type: text/plain' --data 'http://localhost:10087'
           cat start-gateway.log
 
       - name: Run test

@@ -39,6 +39,9 @@ struct Cli {
     /// Socket address of LlamaEdge API Server instance
     #[arg(long, default_value = DEFAULT_PORT, value_parser = clap::value_parser!(u16), group = "socket_address_group")]
     port: u16,
+    /// Use rag-api-server instances as downstream server instead of llama-api-server instances
+    #[arg(long)]
+    rag: bool,
 }
 
 #[allow(clippy::needless_return)]
@@ -70,21 +73,41 @@ async fn main() -> Result<(), ServerError> {
     let app_state = AppState::new(client);
 
     // Build our application with routes
-    let app = Router::new()
-        .route("/v1/chat/completions", post(chat_handler))
-        .route("/v1/completions", post(chat_handler))
-        .route("/v1/models", post(chat_handler))
-        .route("/v1/embeddings", post(chat_handler))
-        .route("/v1/files", post(chat_handler))
-        .route("/v1/chunks", post(chat_handler))
-        .route("/v1/audio/transcriptions", post(audio_whisper_handler))
-        .route("/v1/audio/translations", post(audio_whisper_handler))
-        .route("/v1/images/generations", post(image_handler))
-        .route("/v1/images/edits", post(image_handler))
-        .route("/admin/register/:type", post(add_url_handler))
-        .route("/admin/unregister/:type", post(remove_url_handler))
-        .route("/admin/servers", post(list_downstream_servers_handler))
-        .with_state(app_state);
+    let app = if cli.rag {
+        Router::new()
+            .route("/v1/chat/completions", post(rag_chat_handler))
+            .route("/v1/completions", post(rag_chat_handler))
+            .route("/v1/models", post(rag_chat_handler))
+            .route("/v1/embeddings", post(rag_chat_handler))
+            .route("/v1/files", post(rag_chat_handler))
+            .route("/v1/chunks", post(rag_chat_handler))
+            .route("/v1/create/rag", post(rag_chat_handler))
+            .route("/v1/retrieve", post(rag_chat_handler))
+            .route("/v1/audio/transcriptions", post(audio_whisper_handler))
+            .route("/v1/audio/translations", post(audio_whisper_handler))
+            .route("/v1/images/generations", post(image_handler))
+            .route("/v1/images/edits", post(image_handler))
+            .route("/admin/register/:type", post(add_url_handler))
+            .route("/admin/unregister/:type", post(remove_url_handler))
+            .route("/admin/servers", post(list_downstream_servers_handler))
+            .with_state(app_state)
+    } else {
+        Router::new()
+            .route("/v1/chat/completions", post(chat_handler))
+            .route("/v1/completions", post(chat_handler))
+            .route("/v1/models", post(chat_handler))
+            .route("/v1/embeddings", post(chat_handler))
+            .route("/v1/files", post(chat_handler))
+            .route("/v1/chunks", post(chat_handler))
+            .route("/v1/audio/transcriptions", post(audio_whisper_handler))
+            .route("/v1/audio/translations", post(audio_whisper_handler))
+            .route("/v1/images/generations", post(image_handler))
+            .route("/v1/images/edits", post(image_handler))
+            .route("/admin/register/:type", post(add_url_handler))
+            .route("/admin/unregister/:type", post(remove_url_handler))
+            .route("/admin/servers", post(list_downstream_servers_handler))
+            .with_state(app_state)
+    };
 
     // socket address
     let addr = match cli.socket_addr {
@@ -179,6 +202,7 @@ struct AppState {
     chat_urls: Arc<RwLock<Services>>,
     audio_urls: Arc<RwLock<Services>>,
     image_urls: Arc<RwLock<Services>>,
+    rag_urls: Arc<RwLock<Services>>,
 }
 
 impl AppState {
@@ -188,14 +212,16 @@ impl AppState {
             chat_urls: Arc::new(RwLock::new(Services::new(UrlType::Chat))),
             audio_urls: Arc::new(RwLock::new(Services::new(UrlType::AudioWhisper))),
             image_urls: Arc::new(RwLock::new(Services::new(UrlType::Image))),
+            rag_urls: Arc::new(RwLock::new(Services::new(UrlType::Rag))),
         }
     }
 
-    async fn add_url(&self, url_type: UrlType, url: &Uri) -> Result<(), ServerError> {
-        let mut services = match url_type {
+    async fn add_url(&self, url_type: &UrlType, url: &Uri) -> Result<(), ServerError> {
+        let mut services = match *url_type {
             UrlType::Chat => self.chat_urls.write().await,
             UrlType::AudioWhisper => self.audio_urls.write().await,
             UrlType::Image => self.image_urls.write().await,
+            UrlType::Rag => self.rag_urls.write().await,
         };
 
         services.push(url.clone()).await;
@@ -203,11 +229,12 @@ impl AppState {
         Ok(())
     }
 
-    async fn remove_url(&self, url_type: UrlType, url: &Uri) -> Result<(), ServerError> {
-        let services = match &url_type {
+    async fn remove_url(&self, url_type: &UrlType, url: &Uri) -> Result<(), ServerError> {
+        let services = match *url_type {
             UrlType::Chat => &self.chat_urls,
             UrlType::AudioWhisper => &self.audio_urls,
             UrlType::Image => &self.image_urls,
+            UrlType::Rag => &self.rag_urls,
         };
 
         let services = services.write().await;
@@ -275,6 +302,7 @@ enum UrlType {
     AudioWhisper,
     Chat,
     Image,
+    Rag,
 }
 impl fmt::Display for UrlType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -282,6 +310,7 @@ impl fmt::Display for UrlType {
             UrlType::Chat => write!(f, "chat"),
             UrlType::AudioWhisper => write!(f, "whisper"),
             UrlType::Image => write!(f, "image"),
+            UrlType::Rag => write!(f, "rag"),
         }
     }
 }

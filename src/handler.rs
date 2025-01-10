@@ -23,6 +23,24 @@ pub(crate) async fn chat_handler(
     proxy_request(state.client, req, chat_url).await
 }
 
+pub(crate) async fn rag_chat_handler(
+    State(state): State<AppState>,
+    req: Request<Body>,
+) -> Result<Response<Body>, StatusCode> {
+    info!(target: "stdout", "handling rag request");
+
+    let rag_url = match state.rag_urls.read().await.next().await {
+        Ok(url) => url,
+        Err(e) => {
+            let err_msg = e.to_string();
+            info!(target: "stdout", "{}", &err_msg);
+            return Ok(error::internal_server_error(&err_msg));
+        }
+    };
+
+    proxy_request(state.client, req, rag_url).await
+}
+
 pub(crate) async fn audio_whisper_handler(
     State(state): State<AppState>,
     req: Request<Body>,
@@ -116,10 +134,6 @@ pub(crate) async fn add_url_handler(
     Path(url_type): Path<String>,
     body: String,
 ) -> Result<Response<Body>, StatusCode> {
-    info!(target: "stdout", "In add_url_handler");
-    info!(target: "stdout", "url_type: {}", url_type);
-    info!(target: "stdout", "body: {}", &body);
-
     let url_type = match url_type.as_str() {
         "chat" => UrlType::Chat,
         "whisper" => UrlType::AudioWhisper,
@@ -132,13 +146,13 @@ pub(crate) async fn add_url_handler(
     };
 
     let url: Uri = body.parse().map_err(|_| StatusCode::BAD_REQUEST)?;
-    if let Err(e) = state.add_url(url_type, &url).await {
+    if let Err(e) = state.add_url(&url_type, &url).await {
         let err_msg = e.to_string();
         info!(target: "stdout", "{}", &err_msg);
         return Ok(error::internal_server_error(&err_msg));
     }
 
-    info!(target: "stdout", "registered {}", url);
+    info!(target: "stdout", "registered new downstream server, type: {}, url: {}", url_type, url);
 
     // create a response with status code 200. Content-Type is JSON
     let json_body = serde_json::json!({
@@ -160,10 +174,6 @@ pub(crate) async fn remove_url_handler(
     Path(url_type): Path<String>,
     body: String,
 ) -> Result<Response<Body>, StatusCode> {
-    info!(target: "stdout", "In remove_url_handler");
-    info!(target: "stdout", "url_type: {}", url_type);
-    info!(target: "stdout", "body: {}", &body);
-
     let url_type = match url_type.as_str() {
         "chat" => UrlType::Chat,
         "whisper" => UrlType::AudioWhisper,
@@ -176,13 +186,13 @@ pub(crate) async fn remove_url_handler(
     };
 
     let url: Uri = body.parse().map_err(|_| StatusCode::BAD_REQUEST)?;
-    if let Err(e) = state.remove_url(url_type, &url).await {
+    if let Err(e) = state.remove_url(&url_type, &url).await {
         let err_msg = e.to_string();
         error!(target: "stdout", "{}", &err_msg);
         return Ok(error::internal_server_error(&err_msg));
     }
 
-    info!(target: "stdout", "unregistered {}", url);
+    info!(target: "stdout", "unregistered downstream server, type: {}, url: {}", url_type, url);
 
     // create a response with status code 200. Content-Type is JSON
     let json_body = serde_json::json!({

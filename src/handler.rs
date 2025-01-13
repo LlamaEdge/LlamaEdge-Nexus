@@ -179,6 +179,7 @@ pub(crate) async fn remove_url_handler(
         "chat" => UrlType::Chat,
         "whisper" => UrlType::AudioWhisper,
         "image" => UrlType::Image,
+        "rag" => UrlType::Rag,
         _ => {
             let err_msg = format!("invalid url type: {}", url_type);
             error!(target: "stdout", "{}", &err_msg);

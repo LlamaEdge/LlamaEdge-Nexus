@@ -26,17 +26,17 @@ use utils::LogLevel;
 
 type SharedClient = Arc<Client<HttpConnector>>;
 
-// default port of LlamaEdge Gateway
+// default port of LlamaEdge Proxy Server
 const DEFAULT_PORT: &str = "8080";
 
 #[derive(Debug, Parser)]
-#[command(name = "LlamaEdge Gateway", version = env!("CARGO_PKG_VERSION"), author = env!("CARGO_PKG_AUTHORS"), about = "LlamaEdge Gateway")]
+#[command(name = "LlamaEdge Proxy Server", version = env!("CARGO_PKG_VERSION"), author = env!("CARGO_PKG_AUTHORS"), about = "LlamaEdge Proxy Server")]
 #[command(group = ArgGroup::new("socket_address_group").multiple(false).args(&["socket_addr", "port"]))]
 struct Cli {
-    /// Socket address of Llama-Gateway instance. For example, `0.0.0.0:8080`.
+    /// Socket address of llama-proxy-server instance. For example, `0.0.0.0:8080`.
     #[arg(long, default_value = None, value_parser = clap::value_parser!(SocketAddr), group = "socket_address_group")]
     socket_addr: Option<SocketAddr>,
-    /// Socket address of LlamaEdge API Server instance
+    /// Socket address of llama-proxy-server instance
     #[arg(long, default_value = DEFAULT_PORT, value_parser = clap::value_parser!(u16), group = "socket_address_group")]
     port: u16,
     /// Use rag-api-server instances as downstream server instead of llama-api-server instances

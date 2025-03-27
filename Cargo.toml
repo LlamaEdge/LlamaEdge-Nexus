@@ -25,6 +25,10 @@ endpoints = { version = "0.25.1", features = [
     "whisper",
     "rag",
 ], git = "https://github.com/LlamaEdge/LlamaEdge.git", branch = "refactor-update-serverinfo" }
+qdrant = { package = "qdrant_rest_client", version = "0.2.1" }
+text-splitter = { version = "^0.24", features = ["tiktoken-rs", "markdown"] }
+tokio-util = "0.7.13"
+config = { version = "^0.15", features = ["toml"] }
 
 [patch.crates-io]
 tokio   = { git = "https://github.com/second-state/wasi_tokio.git", branch = "v1.36.x" }

@@ -20,7 +20,13 @@ use error::{ServerError, ServerResult};
 use futures_util::StreamExt;
 use info::ServerInfo;
 use server::{Server, ServerGroup, ServerId, ServerKind};
-use std::{collections::HashMap, net::SocketAddr, path::PathBuf, str::FromStr, sync::Arc};
+use std::{
+    collections::HashMap,
+    net::{IpAddr, SocketAddr},
+    path::PathBuf,
+    str::FromStr,
+    sync::Arc,
+};
 use tokio::{net::TcpListener, sync::RwLock};
 use utils::LogLevel;
 
@@ -30,12 +36,6 @@ struct Cli {
     /// Path to the config file
     #[arg(long, default_value = "config.toml", value_parser = clap::value_parser!(PathBuf))]
     config: PathBuf,
-    /// Socket address of llama-proxy-server instance. For example, `0.0.0.0:8080`.
-    #[arg(long, default_value = None, value_parser = clap::value_parser!(SocketAddr), group = "socket_address_group")]
-    socket_addr: Option<SocketAddr>,
-    /// Socket address of llama-proxy-server instance
-    #[arg(long, default_value = "8080", value_parser = clap::value_parser!(u16), group = "socket_address_group")]
-    port: u16,
     /// Use rag-api-server instances as downstream server instead of llama-api-server instances
     #[arg(long)]
     rag: bool,
@@ -84,6 +84,12 @@ async fn main() -> Result<(), ServerError> {
         }
     };
 
+    // socket address
+    let addr = SocketAddr::from((
+        config.server.host.parse::<IpAddr>().unwrap(),
+        config.server.port,
+    ));
+
     let app_state = Arc::new(AppState::new(config, ServerInfo::default()));
 
     let app = Router::new()
@@ -125,11 +131,7 @@ async fn main() -> Result<(), ServerError> {
         // )
         .with_state(app_state);
 
-    // socket address
-    let addr = match cli.socket_addr {
-        Some(addr) => addr,
-        None => SocketAddr::from(([0, 0, 0, 0], cli.port)),
-    };
+    // create a tcp listener
     let tcp_listener = TcpListener::bind(addr).await.unwrap();
     info!(target: "stdout", "Listening on {}", addr);
 

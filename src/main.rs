@@ -97,6 +97,8 @@ async fn main() -> Result<(), ServerError> {
         )
         .route("/v1/audio/speech", post(handler::audio_tts_handler))
         .route("/v1/images/generations", post(handler::image_handler))
+        .route("/v1/images/edits", post(handler::image_handler))
+        .route("/v1/create/rag", post(handler::create_rag_handler))
         // .route("/v1/embeddings", post(chat_handler))
         // .route("/v1/files", post(chat_handler))
         // .route("/v1/chunks", post(chat_handler))

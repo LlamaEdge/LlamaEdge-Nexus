@@ -7,7 +7,7 @@ use crate::{
 };
 use axum::{
     body::Body,
-    extract::{Json, Path, State},
+    extract::{Json, Multipart, Path, State},
     http::{HeaderMap, Method, Request, Response, StatusCode, Uri},
     response::IntoResponse,
 };
@@ -569,6 +569,258 @@ pub(crate) async fn image_handler(
             Err(ServerError::Operation(err_msg))
         }
     }
+}
+
+pub(crate) async fn create_rag_handler(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    mut multipart: Multipart,
+) -> ServerResult<Response<Body>> {
+    let request_id = headers
+        .get("x-request-id")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+
+    info!(target: "stdout", "Received a new create RAG request - request_id: {}", request_id);
+
+    // process the multipart form data
+    let mut contents = String::new();
+    let mut extension = String::new();
+    let mut vdb_server_url = String::new();
+    let mut vdb_collection_name = String::new();
+    let mut vdb_api_key = String::new();
+    let mut chunk_capacity = 100;
+    while let Some(mut field) = multipart.next_field().await.map_err(|e| {
+        let err_msg = format!("Failed to get next field: {}", e);
+        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        ServerError::Operation(err_msg)
+    })? {
+        match field.name() {
+            Some("file") => {
+                // Get content type if available
+                if let Some(content_type) = field.content_type() {
+                    // check if the content type is a multipart/form-data
+                    match content_type {
+                        "text/plain" => {
+                            extension = "txt".to_string();
+                        }
+                        "text/markdown" => {
+                            extension = "md".to_string();
+                        }
+                        _ => {
+                            let err_msg = "The file should be a plain text or markdown file";
+                            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                            return Err(ServerError::Operation(err_msg.to_string()));
+                        }
+                    }
+                }
+
+                // get the file contents
+                while let Some(chunk) = field.chunk().await.map_err(|e| {
+                    let err_msg = format!("Failed to get the next chunk: {}", e);
+                    error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                    ServerError::Operation(err_msg)
+                })? {
+                    let chunk_data = String::from_utf8(chunk.to_vec()).map_err(|e| {
+                        let err_msg =
+                            format!("Failed to convert the chunk data to a string: {}", e);
+                        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                        ServerError::Operation(err_msg)
+                    })?;
+
+                    contents.push_str(&chunk_data);
+                }
+            }
+            Some("chunk_capacity") => {
+                // Get content type if available
+                if let Some(content_type) = field.content_type() {
+                    info!(target: "stdout", "Content type: {} - request_id: {}", content_type, request_id);
+                }
+
+                // Get the field data as a string
+                let capacity = field.text().await.map_err(|e| {
+                    let err_msg = format!("`chunk_capacity` field should be a text field. {}", e);
+                    error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                    ServerError::Operation(err_msg)
+                })?;
+
+                chunk_capacity = capacity.parse().map_err(|e| {
+                    let err_msg = format!("Failed to convert the chunk capacity to a usize: {}", e);
+                    error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                    ServerError::Operation(err_msg)
+                })?;
+
+                debug!(target: "stdout", "Got chunk capacity: {} - request_id: {}", chunk_capacity, request_id);
+            }
+            Some("vdb_server_url") => {
+                // Get content type if available
+                if let Some(content_type) = field.content_type() {
+                    info!(target: "stdout", "Content type: {} - request_id: {}", content_type, request_id);
+                }
+
+                // Get the field data as a string
+                vdb_server_url = field.text().await.map_err(|e| {
+                    let err_msg = format!("`vdb_server_url` field should be a text field. {}", e);
+                    error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                    ServerError::Operation(err_msg)
+                })?;
+
+                debug!(target: "stdout", "Got VectorDB server URL: {} - request_id: {}", vdb_server_url, request_id);
+            }
+            Some("vdb_collection_name") => {
+                // Get content type if available
+                if let Some(content_type) = field.content_type() {
+                    info!(target: "stdout", "Content type: {} - request_id: {}", content_type, request_id);
+                }
+
+                // Get the field data as a string
+                vdb_collection_name = field.text().await.map_err(|e| {
+                    let err_msg =
+                        format!("`vdb_collection_name` field should be a text field. {}", e);
+                    error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                    ServerError::Operation(err_msg)
+                })?;
+
+                debug!(target: "stdout", "Got VectorDB collection name: {} - request_id: {}", vdb_collection_name, request_id);
+            }
+            Some("vdb_api_key") => {
+                // Get content type if available
+                if let Some(content_type) = field.content_type() {
+                    info!(target: "stdout", "Content type: {} - request_id: {}", content_type, request_id);
+                }
+
+                // Get the field data as a string
+                vdb_api_key = field.text().await.map_err(|e| {
+                    let err_msg = format!("`vdb_api_key` field should be a text field. {}", e);
+                    error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                    ServerError::Operation(err_msg)
+                })?;
+            }
+            Some(field_name) => {
+                let warn_msg = format!("Unknown field: {}", field_name);
+                warn!(target: "stdout", "{} - request_id: {}", warn_msg, request_id);
+            }
+            None => {
+                let err_msg = "No field name found";
+                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                return Err(ServerError::Operation(err_msg.to_string()));
+            }
+        }
+    }
+
+    // segment the contents into chunks
+    info!(target: "stdout", "Segment the contents into chunks - request_id: {}", request_id);
+    let chunks = rag::chunk_text(&contents, extension, chunk_capacity, &request_id)?;
+
+    // compute the embeddings for each chunk
+    info!(target: "stdout", "Compute embeddings for document chunks - request_id: {}", request_id);
+    let embedding_response = {
+        let embedding_request = EmbeddingRequest {
+            model: None,
+            input: chunks.as_slice().into(),
+            encoding_format: None,
+            user: None,
+            vdb_server_url: None,
+            vdb_collection_name: None,
+            vdb_api_key: None,
+        };
+
+        // get the embeddings server
+        let servers = state.server_group.read().await;
+        let embeddings_servers = match servers.get(&ServerKind::embeddings) {
+            Some(servers) => servers,
+            None => {
+                let err_msg = "No embeddings server available";
+                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                return Err(ServerError::Operation(err_msg.to_string()));
+            }
+        };
+
+        let embeddings_server_base_url = match embeddings_servers.next().await {
+            Ok(url) => url,
+            Err(e) => {
+                let err_msg = format!("Failed to get the embeddings server: {}", e);
+                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                return Err(ServerError::Operation(err_msg));
+            }
+        };
+        let embeddings_service_url = format!("{}v1/embeddings", embeddings_server_base_url);
+        info!(target: "stdout", "Forward the embeddings request to {} - request_id: {}", embeddings_service_url, request_id);
+
+        // parse the content-type header
+        let content_type = headers
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .ok_or_else(|| {
+                let err_msg = "Missing Content-Type header".to_string();
+                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                ServerError::Operation(err_msg)
+            })?;
+        let content_type = content_type.to_string();
+        debug!(target: "stdout", "Request content type: {} - request_id: {}", content_type, request_id);
+
+        // Create request client
+        let client = reqwest::Client::new();
+        let ds_embedding_response = client
+            .post(embeddings_service_url)
+            .header("Content-Type", content_type)
+            .json(&embedding_request)
+            .send()
+            .await
+            .map_err(|e| {
+                let err_msg = format!("Failed to create the request: {}", e);
+                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                ServerError::Operation(err_msg)
+            })?;
+
+        ds_embedding_response
+            .json::<EmbeddingsResponse>()
+            .await
+            .map_err(|e| {
+                let err_msg = format!("Failed to parse the embedding response: {}", e);
+                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                ServerError::Operation(err_msg)
+            })?
+    };
+    let embeddings = embedding_response.data;
+
+    info!(target: "stdout", "Got {} embeddings - request_id: {}", embeddings.len(), request_id);
+
+    // create a Qdrant client
+    let mut qdrant_client = qdrant::Qdrant::new_with_url(vdb_server_url);
+    if !vdb_api_key.is_empty() {
+        qdrant_client.set_api_key(vdb_api_key);
+    }
+
+    // create a collection in VectorDB
+    let dim = embeddings[0].embedding.len();
+    rag::qdrant_create_collection(&qdrant_client, &vdb_collection_name, dim, &request_id).await?;
+
+    // persist the embeddings to the collection
+    rag::qdrant_persist_embeddings(
+        &qdrant_client,
+        &vdb_collection_name,
+        embeddings.as_slice(),
+        chunks.as_slice(),
+        &request_id,
+    )
+    .await?;
+
+    // create a response with status code 200. Content-Type is JSON
+    let json_body = serde_json::json!({
+        "message": format!("Collection `{}` created successfully.", vdb_collection_name),
+    });
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "application/json")
+        .body(Body::from(json_body.to_string()))
+        .map_err(|e| {
+            let err_msg = format!("Failed to create response: {}", e);
+            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+            ServerError::Operation(err_msg)
+        })
 }
 
 pub mod admin {

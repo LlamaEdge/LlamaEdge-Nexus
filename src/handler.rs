@@ -484,6 +484,93 @@ pub(crate) async fn audio_tts_handler(
     }
 }
 
+pub(crate) async fn image_handler(
+    State(state): State<Arc<AppState>>,
+    req: Request<Body>,
+) -> ServerResult<Response<Body>> {
+    // Get request ID from headers
+    let request_id = req
+        .headers()
+        .get("x-request-id")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+
+    info!(target: "stdout", "Received a new image request - request_id: {}", request_id);
+
+    // get the image server
+    let image_server_base_url = {
+        let servers = state.server_group.read().await;
+        let image_servers = match servers.get(&ServerKind::image) {
+            Some(servers) => servers,
+            None => {
+                let err_msg = "No image server available";
+                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                return Err(ServerError::Operation(err_msg.to_string()));
+            }
+        };
+
+        match image_servers.next().await {
+            Ok(url) => url,
+            Err(e) => {
+                let err_msg = format!("Failed to get the image server: {}", e);
+                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                return Err(ServerError::Operation(err_msg));
+            }
+        }
+    };
+
+    let image_service_url = format!("{}v1/images/generations", image_server_base_url);
+    info!(target: "stdout", "Forward the image request to {} - request_id: {}", image_service_url, request_id);
+
+    // Create request client
+    let mut request_builder = reqwest::Client::new().post(image_service_url);
+    for (name, value) in req.headers().iter() {
+        request_builder = request_builder.header(name, value);
+    }
+
+    // convert the request body into bytes
+    let body_bytes = hyper::body::to_bytes(req.into_body()).await.map_err(|e| {
+        let err_msg = format!("Failed to convert the request body into bytes: {}", e);
+        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        ServerError::Operation(err_msg)
+    })?;
+
+    let ds_response = request_builder.body(body_bytes).send().await.map_err(|e| {
+        let err_msg = format!(
+            "Failed to forward the request to the downstream server: {}",
+            e
+        );
+        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        ServerError::Operation(err_msg)
+    })?;
+
+    // create a response builder with the status and headers of the downstream response
+    let mut response_builder = Response::builder().status(ds_response.status());
+    for (name, value) in ds_response.headers().iter() {
+        response_builder = response_builder.header(name, value);
+    }
+
+    // Handle response body reading with cancellation
+    let bytes = ds_response.bytes().await.map_err(|e| {
+        let err_msg = format!("Failed to get the full response as bytes: {}", e);
+        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        ServerError::Operation(err_msg)
+    })?;
+
+    match response_builder.body(Body::from(bytes)) {
+        Ok(response) => {
+            info!(target: "stdout", "Image request completed successfully - request_id: {}", request_id);
+            Ok(response)
+        }
+        Err(e) => {
+            let err_msg = format!("Failed to create the response: {}", e);
+            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+            Err(ServerError::Operation(err_msg))
+        }
+    }
+}
+
 pub mod admin {
     use super::*;
 

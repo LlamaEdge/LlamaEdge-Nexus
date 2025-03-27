@@ -104,15 +104,7 @@ async fn main() -> Result<(), ServerError> {
         .route("/v1/create/rag", post(handler::create_rag_handler))
         .route("/v1/chunks", post(handler::chunks_handler))
         .route("/v1/models", get(handler::models_handler))
-        // .route("/v1/embeddings", post(chat_handler))
-        // .route("/v1/files", post(chat_handler))
-        // .route("/v1/chunks", post(chat_handler))
-        // .route("/v1/audio/transcriptions", post(audio_whisper_handler))
-        // .route("/v1/audio/translations", post(audio_whisper_handler))
-        // .route("/v1/images/generations", post(image_handler))
-        // .route("/v1/images/edits", post(image_handler))
-        // .route("/admin/register/:type", post(add_url_handler))
-        // .route("/admin/unregister/:type", post(remove_url_handler))
+        .route("/v1/info", get(handler::info_handler))
         .route(
             "/admin/servers/register",
             post(handler::admin::register_downstream_server_handler),

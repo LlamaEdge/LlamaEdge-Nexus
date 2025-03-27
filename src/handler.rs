@@ -971,6 +971,66 @@ pub(crate) async fn models_handler(
         })
 }
 
+pub(crate) async fn info_handler(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> ServerResult<Response<Body>> {
+    let request_id = headers
+        .get("x-request-id")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+
+    let mut chat_models = vec![];
+    let mut embedding_models = vec![];
+    let mut image_models = vec![];
+    let mut tts_models = vec![];
+    let mut translate_models = vec![];
+    let mut transcribe_models = vec![];
+    let server_info = state.server_info.read().await;
+    for server in server_info.servers.values() {
+        if let Some(ref model) = server.chat_model {
+            chat_models.push(model.clone());
+        }
+        if let Some(ref model) = server.embedding_model {
+            embedding_models.push(model.clone());
+        }
+        if let Some(ref model) = server.image_model {
+            image_models.push(model.clone());
+        }
+        if let Some(ref model) = server.tts_model {
+            tts_models.push(model.clone());
+        }
+        if let Some(ref model) = server.translate_model {
+            translate_models.push(model.clone());
+        }
+        if let Some(ref model) = server.transcribe_model {
+            transcribe_models.push(model.clone());
+        }
+    }
+
+    let json_body = serde_json::json!({
+        "models": {
+            "chat": chat_models,
+            "embedding": embedding_models,
+            "image": image_models,
+            "tts": tts_models,
+            "translate": translate_models,
+            "transcribe": transcribe_models,
+        },
+    });
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "application/json")
+        .body(Body::from(json_body.to_string()))
+        .map_err(|e| {
+            let err_msg = format!("Failed to create response: {}", e);
+            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+            ServerError::Operation(err_msg)
+        })
+}
+
 pub mod admin {
     use super::*;
 

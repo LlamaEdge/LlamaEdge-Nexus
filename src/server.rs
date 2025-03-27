@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet,
     sync::atomic::{AtomicUsize, Ordering},
-    time::SystemTime,
 };
 use tokio::sync::RwLock;
 
@@ -17,22 +16,6 @@ pub(crate) struct ServerIdToRemove {
     pub server_id: ServerId,
 }
 
-/// Represents the health status of a server
-#[derive(Debug, Clone)]
-pub struct HealthStatus {
-    pub is_healthy: bool,
-    pub last_check: SystemTime,
-}
-
-impl Default for HealthStatus {
-    fn default() -> Self {
-        Self {
-            is_healthy: true,
-            last_check: SystemTime::now(),
-        }
-    }
-}
-
 /// Represents a LlamaEdge API server
 #[derive(Debug, Serialize)]
 pub struct Server {
@@ -41,8 +24,6 @@ pub struct Server {
     pub kind: ServerKind,
     #[serde(skip)]
     connections: AtomicUsize,
-    #[serde(skip)]
-    pub health_status: HealthStatus,
 }
 impl<'de> Deserialize<'de> for Server {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -68,7 +49,6 @@ impl<'de> Deserialize<'de> for Server {
             url: helper.url,
             kind: helper.kind,
             connections: AtomicUsize::new(0),
-            health_status: HealthStatus::default(),
         })
     }
 }
@@ -79,7 +59,6 @@ impl Clone for Server {
             url: self.url.clone(),
             kind: self.kind,
             connections: AtomicUsize::new(self.connections.load(Ordering::Relaxed)),
-            health_status: self.health_status.clone(),
         }
     }
 }
@@ -107,7 +86,6 @@ fn test_serialize_server() {
         url: "http://localhost:8000".to_string(),
         kind: ServerKind::chat | ServerKind::tts,
         connections: AtomicUsize::new(0),
-        health_status: HealthStatus::default(),
     };
     let serialized = serde_json::to_string(&server).unwrap();
     assert_eq!(
@@ -121,7 +99,6 @@ fn test_serialize_server() {
         url: "http://localhost:8000".to_string(),
         kind: ServerKind::chat,
         connections: AtomicUsize::new(0),
-        health_status: HealthStatus::default(),
     };
     let serialized = serde_json::to_string(&server).unwrap();
     assert_eq!(
@@ -140,8 +117,6 @@ bitflags! {
         const tts = 1 << 3;
         const translate = 1 << 4;
         const transcribe = 1 << 5;
-        // const vdb = 1 << 6;
-        // const kw_search = 1 << 7;
     }
 }
 impl std::fmt::Display for ServerKind {
@@ -165,12 +140,6 @@ impl std::fmt::Display for ServerKind {
         if self.contains(ServerKind::transcribe) {
             kind_str.push_str("transcribe,");
         }
-        // if self.contains(ServerKind::vdb) {
-        //     kind_str.push_str("vdb,");
-        // }
-        // if self.contains(ServerKind::kw_search) {
-        //     kind_str.push_str("kw_search,");
-        // }
 
         if !kind_str.is_empty() {
             kind_str = kind_str.trim_end_matches(',').to_string();
@@ -194,9 +163,11 @@ impl std::str::FromStr for ServerKind {
                 "tts" => kind.set(Self::tts, true),
                 "translate" => kind.set(Self::translate, true),
                 "transcribe" => kind.set(Self::transcribe, true),
-                // "vdb" => kind.set(Self::vdb, true),
-                // "kw_search" => kind.set(Self::kw_search, true),
-                _ => return Err(ServerError::InvalidServerKind(s.to_string())),
+                _ => {
+                    let err_msg = format!("Invalid server kind: {}", val);
+                    error!(target: "stdout", "{}", &err_msg);
+                    return Err(ServerError::InvalidServerKind(err_msg));
+                }
             }
         }
         Ok(kind)
@@ -227,12 +198,6 @@ impl Serialize for ServerKind {
         if self.contains(ServerKind::transcribe) {
             kind_str.push_str("transcribe,");
         }
-        // if self.contains(ServerKind::vdb) {
-        //     kind_str.push_str("vdb,");
-        // }
-        // if self.contains(ServerKind::kw_search) {
-        //     kind_str.push_str("kw_search,");
-        // }
 
         // Remove trailing comma if present
         if !kind_str.is_empty() {
@@ -271,10 +236,6 @@ fn test_serialize_server_kind() {
     let kind = ServerKind::chat;
     let serialized = serde_json::to_string(&kind).unwrap();
     assert_eq!(serialized, "\"chat\"");
-
-    // let kind = ServerKind::vdb;
-    // let serialized = serde_json::to_string(&kind).unwrap();
-    // assert_eq!(serialized, "\"vdb\"");
 }
 
 #[test]
@@ -286,10 +247,6 @@ fn test_deserialize_server_kind() {
     let serialized = "\"chat\"";
     let kind: ServerKind = serde_json::from_str(serialized).unwrap();
     assert_eq!(kind, ServerKind::chat);
-
-    // let serialized = "\"vdb\"";
-    // let kind: ServerKind = serde_json::from_str(serialized).unwrap();
-    // assert_eq!(kind, ServerKind::vdb);
 }
 
 #[derive(Debug)]

@@ -1,6 +1,7 @@
 use crate::{
     error::{self, ServerError, ServerResult},
     info::{ApiServer, ModelConfig},
+    rag,
     server::{RoutingPolicy, Server, ServerIdToRemove, ServerKind},
     AppState, SharedClient, UrlType,
 };
@@ -15,10 +16,124 @@ use endpoints::{
     embeddings::{EmbeddingRequest, EmbeddingsResponse},
     models::ListModelsResponse,
 };
-use reqwest::Client;
 use std::sync::Arc;
 
-pub(crate) async fn embeddings_handler(
+pub(crate) async fn chat_handler(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(request): Json<ChatCompletionRequest>,
+) -> ServerResult<Response<Body>> {
+    let enable_rag = state.config.read().await.rag.enable;
+    match enable_rag {
+        true => rag::chat(State(state), headers, Json(request)).await,
+        false => chat(State(state), headers, Json(request)).await,
+    }
+}
+
+pub async fn chat(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(request): Json<ChatCompletionRequest>,
+) -> ServerResult<Response<Body>> {
+    let request_id = headers
+        .get("x-request-id")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+
+    info!(target: "stdout", "Received a new chat request - request_id: {}", request_id);
+
+    // get the chat server
+    let chat_server_base_url = {
+        let servers = state.server_group.read().await;
+        let chat_servers = match servers.get(&ServerKind::chat) {
+            Some(servers) => servers,
+            None => {
+                let err_msg = "No chat server available";
+                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                return Err(ServerError::Operation(err_msg.to_string()));
+            }
+        };
+
+        match chat_servers.next().await {
+            Ok(url) => url,
+            Err(e) => {
+                let err_msg = format!("Failed to get the chat server: {}", e);
+                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                return Err(ServerError::Operation(err_msg));
+            }
+        }
+    };
+
+    let chat_service_url = format!("{}v1/chat/completions", chat_server_base_url);
+    info!(target: "stdout", "Forward the chat request to {} - request_id: {}", chat_service_url, request_id);
+
+    let stream = request.stream;
+
+    // Create a request client that can be cancelled
+    let ds_response = reqwest::Client::new()
+        .post(chat_service_url)
+        .header("content-type", "application/json")
+        .json(&request)
+        .send()
+        .await
+        .map_err(|e| {
+            let err_msg = format!(
+                "Failed to forward the request to the downstream server: {}",
+                e
+            );
+            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+            ServerError::Operation(err_msg)
+        })?;
+
+    let status = ds_response.status();
+
+    // Handle response body reading with cancellation
+    let bytes = ds_response.bytes().await.map_err(|e| {
+        let err_msg = format!("Failed to get the full response as bytes: {}", e);
+        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        ServerError::Operation(err_msg)
+    })?;
+
+    match stream {
+        Some(true) => {
+            match Response::builder()
+                .status(status)
+                .header("Content-Type", "text/event-stream")
+                .body(Body::from(bytes))
+            {
+                Ok(response) => {
+                    info!(target: "stdout", "Chat request completed successfully - request_id: {}", request_id);
+                    Ok(response)
+                }
+                Err(e) => {
+                    let err_msg = format!("Failed to create the response: {}", e);
+                    error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                    Err(ServerError::Operation(err_msg))
+                }
+            }
+        }
+        Some(false) | None => {
+            match Response::builder()
+                .status(status)
+                .header("Content-Type", "application/json")
+                .body(Body::from(bytes))
+            {
+                Ok(response) => {
+                    info!(target: "stdout", "Chat request completed successfully - request_id: {}", request_id);
+                    Ok(response)
+                }
+                Err(e) => {
+                    let err_msg = format!("Failed to create the response: {}", e);
+                    error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                    Err(ServerError::Operation(err_msg))
+                }
+            }
+        }
+    }
+}
+
+pub async fn embeddings_handler(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     Json(request): Json<EmbeddingRequest>,

@@ -823,6 +823,121 @@ pub(crate) async fn create_rag_handler(
         })
 }
 
+pub(crate) async fn chunks_handler(
+    State(_state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    mut multipart: Multipart,
+) -> ServerResult<Response<Body>> {
+    let request_id = headers
+        .get("x-request-id")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+
+    info!(target: "stdout", "Received a new chunks request - request_id: {}", request_id);
+
+    // Process multipart form data
+    let mut contents = String::new();
+    let mut extension = String::new();
+    let mut chunk_capacity: usize = 0;
+    while let Some(mut field) = multipart.next_field().await.map_err(|e| {
+        let err_msg = format!("Failed to get next field: {}", e);
+        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        ServerError::Operation(err_msg)
+    })? {
+        match field.name() {
+            Some("file") => {
+                // Get content type if available
+                if let Some(content_type) = field.content_type() {
+                    // check if the content type is a multipart/form-data
+                    match content_type {
+                        "text/plain" => {
+                            extension = "txt".to_string();
+                        }
+                        "text/markdown" => {
+                            extension = "md".to_string();
+                        }
+                        _ => {
+                            let err_msg = "The file should be a plain text or markdown file";
+                            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                            return Err(ServerError::Operation(err_msg.to_string()));
+                        }
+                    }
+                }
+
+                // get the file contents
+                while let Some(chunk) = field.chunk().await.map_err(|e| {
+                    let err_msg = format!("Failed to get the next chunk: {}", e);
+                    error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                    ServerError::Operation(err_msg)
+                })? {
+                    let chunk_data = String::from_utf8(chunk.to_vec()).map_err(|e| {
+                        let err_msg =
+                            format!("Failed to convert the chunk data to a string: {}", e);
+                        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                        ServerError::Operation(err_msg)
+                    })?;
+
+                    contents.push_str(&chunk_data);
+                }
+            }
+            Some("chunk_capacity") => {
+                // Get content type if available
+                if let Some(content_type) = field.content_type() {
+                    info!(target: "stdout", "Content type: {} - request_id: {}", content_type, request_id);
+                }
+
+                // Get the field data as a string
+                let capacity = field.text().await.map_err(|e| {
+                    let err_msg = format!("`chunk_capacity` field should be a text field. {}", e);
+                    error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                    ServerError::Operation(err_msg)
+                })?;
+
+                chunk_capacity = capacity.parse().map_err(|e| {
+                    let err_msg = format!("Failed to convert the chunk capacity to a usize: {}", e);
+                    error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                    ServerError::Operation(err_msg)
+                })?;
+
+                debug!(target: "stdout", "Got chunk capacity: {} - request_id: {}", chunk_capacity, request_id);
+            }
+            Some(field_name) => {
+                let warn_msg = format!("Unknown field: {}", field_name);
+                warn!(target: "stdout", "{} - request_id: {}", warn_msg, request_id);
+            }
+            None => {
+                let err_msg = "No field name found";
+                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                return Err(ServerError::Operation(err_msg.to_string()));
+            }
+        }
+    }
+
+    // segment the contents into chunks
+    info!(target: "stdout", "Segment the contents into chunks - request_id: {}", request_id);
+    let chunks = rag::chunk_text(&contents, extension, chunk_capacity, &request_id)?;
+
+    let json_body = serde_json::json!({
+        "chunks": chunks,
+    });
+    let data = serde_json::to_string(&json_body).map_err(|e| {
+        let err_msg = format!("Failed to serialize chunks response: {}", e);
+        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        ServerError::Operation(err_msg)
+    })?;
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "application/json")
+        .body(Body::from(data))
+        .map_err(|e| {
+            let err_msg = format!("Failed to create response: {}", e);
+            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+            ServerError::Operation(err_msg)
+        })
+}
+
 pub mod admin {
     use super::*;
 

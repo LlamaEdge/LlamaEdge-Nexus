@@ -1,4 +1,4 @@
-name: Release llama-proxy-server
+name: Release LlamaEdge-Nexus
 
 on:
   workflow_dispatch: # manual trigger release

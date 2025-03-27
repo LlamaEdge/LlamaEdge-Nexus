@@ -1,4 +1,4 @@
-name: Test llama-proxy-server
+name: Test LlamaEdge-Nexus
 
 on:
   push:
@@ -118,7 +118,7 @@ jobs:
 
       - name: Start LlamaEdge-Nexus
         run: |
-          nohup ./llama-nexus > ./llama-nexus.log 2>&1 &
+          nohup $HOME/.wasmedge/bin/wasmedge llama-nexus.wasm > ./llama-nexus.log 2>&1 &
           sleep 5
           cat llama-nexus.log
 
@@ -129,6 +129,7 @@ jobs:
           cat  llama-nexus.log
 
       - name: Register chat server
+        if: success()
         run: |
           curl --location 'http://localhost:9068/admin/servers/register' --header 'Content-Type: application/json' --data '{"url": "http://localhost:10010","kind": "chat"}'
           sleep 5
@@ -140,6 +141,7 @@ jobs:
           cat chat-server.log
 
       - name: Register embedding server
+        if: success()
         run: |
           curl --location 'http://localhost:9068/admin/servers/register' --header 'Content-Type: application/json' --data '{"url": "http://localhost:10011","kind": "embedding"}'
           sleep 5
@@ -151,12 +153,12 @@ jobs:
           cat chat-server.log
 
       - name: Run test_chat.hurl
-        if: always()
+        if: success()
         run: |
           hurl --test --jobs 1 ./tests/test_chat.hurl
 
       - name: Run test_embedding.hurl
-        if: always()
+        if: success()
         run: |
           hurl --test --jobs 1 ./tests/test_embedding.hurl
 

@@ -181,7 +181,7 @@ pub async fn embeddings_handler(
     info!(target: "stdout", "Request content type: {} - request_id: {}", content_type, request_id);
 
     // Create request client
-    let response = reqwest::Client::new()
+    let ds_response = reqwest::Client::new()
         .post(embeddings_service_url)
         .header("Content-Type", content_type)
         .json(&request)
@@ -196,10 +196,10 @@ pub async fn embeddings_handler(
             ServerError::Operation(err_msg)
         })?;
 
-    let status = response.status();
+    let status = ds_response.status();
 
     // Handle response body reading with cancellation
-    let bytes = response.bytes().await.map_err(|e| {
+    let bytes = ds_response.bytes().await.map_err(|e| {
         let err_msg = format!("Failed to get the full response as bytes: {}", e);
         error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
         ServerError::Operation(err_msg)

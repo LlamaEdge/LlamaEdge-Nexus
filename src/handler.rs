@@ -1,15 +1,14 @@
 use crate::{
     error::{ServerError, ServerResult},
-    info::{ApiServer, ModelConfig},
+    info::ApiServer,
     rag,
     server::{RoutingPolicy, Server, ServerIdToRemove, ServerKind},
     AppState,
 };
 use axum::{
     body::Body,
-    extract::{Json, Multipart, Path, State},
-    http::{HeaderMap, Method, Request, Response, StatusCode, Uri},
-    response::IntoResponse,
+    extract::{Json, Multipart, State},
+    http::{HeaderMap, Request, Response, StatusCode},
 };
 use endpoints::{
     chat::ChatCompletionRequest,

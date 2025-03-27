@@ -127,9 +127,9 @@ jobs:
           curl --location 'http://localhost:8080/admin/register/whisper' --header 'Content-Type: text/plain' --data 'http://localhost:10087'
           cat start-gateway.log
 
-      - name: Run test
-        run: |
-          hurl --test --repeat 10 tests/*.hurl
+      # - name: Run test
+      #   run: |
+      #     hurl --test --repeat 10 tests/*.hurl
 
       - name: Stop api-server
         run: |

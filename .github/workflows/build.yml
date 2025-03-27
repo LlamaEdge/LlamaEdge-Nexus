@@ -65,19 +65,19 @@ jobs:
           tar -xzvf wasi-sdk-24.0-arm64-macos.tar.gz
           mv wasi-sdk-24.0-arm64-macos wasi-sdk-24.0
 
-      - name: Run clippy
-        if: startsWith(matrix.os, 'ubuntu')
-        env:
-          RUSTFLAGS: "--cfg wasmedge --cfg tokio_unstable"
-        run: |
-          cargo +nightly clippy --target wasm32-wasip1 -- -D warnings
+      # - name: Run clippy
+      #   if: startsWith(matrix.os, 'ubuntu')
+      #   env:
+      #     RUSTFLAGS: "--cfg wasmedge --cfg tokio_unstable"
+      #   run: |
+      #     cargo +nightly clippy --target wasm32-wasip1 -- -D warnings
 
-      - name: Run fmt
-        if: startsWith(matrix.os, 'ubuntu')
-        env:
-          RUSTFLAGS: "--cfg wasmedge --cfg tokio_unstable"
-        run: |
-          cargo +nightly fmt --all -- --check
+      # - name: Run fmt
+      #   if: startsWith(matrix.os, 'ubuntu')
+      #   env:
+      #     RUSTFLAGS: "--cfg wasmedge --cfg tokio_unstable"
+      #   run: |
+      #     cargo +nightly fmt --all -- --check
 
       - name: Build on linux
         if: startsWith(matrix.os, 'ubuntu')

@@ -1,8 +1,8 @@
 use crate::{
     error::{self, ServerError, ServerResult},
     info::{ApiServer, ModelConfig},
-    server::{Server, ServerIdToRemove, ServerKind},
-    AppState, RoutingPolicy, SharedClient, UrlType,
+    server::{RoutingPolicy, Server, ServerIdToRemove, ServerKind},
+    AppState, SharedClient, UrlType,
 };
 use axum::{
     body::Body,
@@ -10,179 +10,100 @@ use axum::{
     http::{HeaderMap, Method, Request, Response, StatusCode, Uri},
     response::IntoResponse,
 };
+use endpoints::{
+    chat::ChatCompletionRequest,
+    embeddings::{EmbeddingRequest, EmbeddingsResponse},
+    models::ListModelsResponse,
+};
 use reqwest::Client;
 use std::sync::Arc;
 
-pub(crate) async fn chat_handler(
-    State(state): State<AppState>,
-    req: Request<Body>,
-) -> Result<Response<Body>, StatusCode> {
-    info!(target: "stdout", "handling chat request");
+pub(crate) async fn embeddings_handler(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(request): Json<EmbeddingRequest>,
+) -> ServerResult<Response<Body>> {
+    // Get request ID from headers
+    let request_id = headers
+        .get("x-request-id")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
 
-    let chat_url = match state.chat_urls.read().await.next().await {
-        Ok(url) => url,
-        Err(e) => {
-            let err_msg = e.to_string();
-            info!(target: "stdout", "{}", &err_msg);
-            return Ok(error::internal_server_error(&err_msg));
-        }
-    };
+    info!(target: "stdout", "Received a new embeddings request - request_id: {}", request_id);
 
-    proxy_request(state.client, req, chat_url).await
-}
-
-pub(crate) async fn rag_chat_handler(
-    State(state): State<AppState>,
-    req: Request<Body>,
-) -> Result<Response<Body>, StatusCode> {
-    info!(target: "stdout", "handling rag request");
-
-    let rag_url = match state.rag_urls.read().await.next().await {
-        Ok(url) => url,
-        Err(e) => {
-            let err_msg = e.to_string();
-            info!(target: "stdout", "{}", &err_msg);
-            return Ok(error::internal_server_error(&err_msg));
-        }
-    };
-
-    proxy_request(state.client, req, rag_url).await
-}
-
-pub(crate) async fn audio_whisper_handler(
-    State(state): State<AppState>,
-    req: Request<Body>,
-) -> Result<Response<Body>, StatusCode> {
-    info!(target: "stdout", "handling audio whisper request");
-
-    let audio_url = match state.audio_urls.read().await.next().await {
-        Ok(url) => url,
-        Err(e) => {
-            let err_msg = e.to_string();
-            info!(target: "stdout", "{}", &err_msg);
-            return Ok(error::internal_server_error(&err_msg));
-        }
-    };
-
-    proxy_request(state.client, req, audio_url).await
-}
-
-pub(crate) async fn image_handler(
-    State(state): State<AppState>,
-    req: Request<Body>,
-) -> Result<Response<Body>, StatusCode> {
-    info!(target: "stdout", "handling image request");
-
-    let image_url = match state.image_urls.read().await.next().await {
-        Ok(url) => url,
-        Err(e) => {
-            let err_msg = e.to_string();
-            info!(target: "stdout", "{}", &err_msg);
-            return Ok(error::internal_server_error(&err_msg));
-        }
-    };
-
-    proxy_request(state.client, req, image_url).await
-}
-
-pub(crate) async fn proxy_request(
-    _client: SharedClient, // We'll keep this parameter for now to maintain compatibility
-    req: Request<Body>,
-    downstream_server_socket_addr: Uri,
-) -> Result<Response<Body>, StatusCode> {
-    // Change the request URL to the downstream server
-    let endpoint = match req.uri().path_and_query().map(|x| x.to_string()) {
-        Some(endpoint) => endpoint,
+    // get the embeddings server
+    let servers = state.server_group.read().await;
+    let embeddings_servers = match servers.get(&ServerKind::embeddings) {
+        Some(servers) => servers,
         None => {
-            let err_msg = "failed to parse the endpoint from the request uri";
-            error!(target: "stdout", "{}", &err_msg);
-            return Ok(error::internal_server_error(err_msg));
+            let err_msg = "No embeddings server available";
+            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+            return Err(ServerError::Operation(err_msg.to_string()));
         }
     };
-    info!(target: "stdout", "endpoint: {}", &endpoint);
 
-    let mut server_socket_addr = downstream_server_socket_addr.to_string();
-    server_socket_addr = server_socket_addr.trim_end_matches('/').to_string();
-
-    let new_uri = match format!("{}{}", server_socket_addr, endpoint).parse::<Uri>() {
+    let embeddings_server_base_url = match embeddings_servers.next().await {
         Ok(url) => url,
         Err(e) => {
-            let err_msg = format!("failed to parse the downstream server URL: {}", e);
-            error!(target: "stdout", "{}", &err_msg);
-            return Ok(error::internal_server_error(&err_msg));
+            let err_msg = format!("Failed to get the embeddings server: {}", e);
+            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+            return Err(ServerError::Operation(err_msg));
         }
     };
+    let embeddings_service_url = format!("{}v1/embeddings", embeddings_server_base_url);
+    info!(target: "stdout", "Forward the embeddings request to {} - request_id: {}", embeddings_service_url, request_id);
 
-    info!(target: "stdout", "dispatch the chat request to {}", new_uri);
+    // parse the content-type header
+    let content_type = headers
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| {
+            let err_msg = "Missing Content-Type header".to_string();
+            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+            ServerError::Operation(err_msg)
+        })?;
+    let content_type = content_type.to_string();
+    info!(target: "stdout", "Request content type: {} - request_id: {}", content_type, request_id);
 
-    // Convert axum headers to reqwest headers
-    let mut headers = HeaderMap::new();
-    for (key, value) in req.headers() {
-        headers.insert(key.clone(), value.clone());
-    }
-
-    let method = req.method().clone();
-
-    // Get the request body
-    let body = match hyper::body::to_bytes(req.into_body()).await {
-        Ok(bytes) => bytes,
-        Err(e) => {
-            let err_msg = format!("failed to read request body: {}", e);
-            error!(target: "stdout", "{}", &err_msg);
-            return Ok(error::internal_server_error(&err_msg));
-        }
-    };
-
-    // Create reqwest client
-    let client = Client::new();
-
-    // Build the request
-    let request_builder = client
-        .request(method, new_uri.to_string())
-        .headers(headers)
-        .body(body);
-
-    // Send the request
-    match request_builder.send().await {
-        Ok(res) => {
-            let status = res.status();
-            let headers = res.headers().clone();
-            let body = match res.bytes().await {
-                Ok(bytes) => bytes,
-                Err(e) => {
-                    let err_msg = format!("failed to read response body: {}", e);
-                    error!(target: "stdout", "{}", &err_msg);
-                    return Ok(error::internal_server_error(&err_msg));
-                }
-            };
-
-            // Build the response
-            let mut response = Response::builder().status(status);
-
-            // Add headers
-            for (key, value) in headers {
-                if let Some(key) = key {
-                    response = response.header(key, value);
-                }
-            }
-
-            // Set the body
-            match response.body(Body::from(body)) {
-                Ok(res) => Ok(res.map(|b| b.into())),
-                Err(e) => {
-                    let err_msg = format!("failed to build response: {}", e);
-                    error!(target: "stdout", "{}", &err_msg);
-                    Ok(error::internal_server_error(&err_msg))
-                }
-            }
-        }
-        Err(e) => {
+    // Create request client
+    let response = reqwest::Client::new()
+        .post(embeddings_service_url)
+        .header("Content-Type", content_type)
+        .json(&request)
+        .send()
+        .await
+        .map_err(|e| {
             let err_msg = format!(
-                "failed to forward the request to the downstream server: {}",
+                "Failed to forward the request to the downstream server: {}",
                 e
             );
-            error!(target: "stdout", "{}", &err_msg);
-            Ok(error::internal_server_error(&err_msg))
+            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+            ServerError::Operation(err_msg)
+        })?;
+
+    let status = response.status();
+
+    // Handle response body reading with cancellation
+    let bytes = response.bytes().await.map_err(|e| {
+        let err_msg = format!("Failed to get the full response as bytes: {}", e);
+        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        ServerError::Operation(err_msg)
+    })?;
+
+    match Response::builder()
+        .status(status)
+        .header("Content-Type", "application/json")
+        .body(Body::from(bytes))
+    {
+        Ok(response) => {
+            info!(target: "stdout", "Embeddings request completed successfully - request_id: {}", request_id);
+            Ok(response)
+        }
+        Err(e) => {
+            let err_msg = format!("Failed to create the response: {}", e);
+            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+            Err(ServerError::Operation(err_msg))
         }
     }
 }

@@ -120,7 +120,7 @@ async fn main() -> Result<(), ServerError> {
     let app = Router::new()
         // .route("/v1/chat/completions", post(chat_handler))
         // .route("/v1/completions", post(chat_handler))
-        // .route("/v1/models", post(chat_handler))
+        .route("/v1/models", post(handler::embeddings_handler))
         // .route("/v1/embeddings", post(chat_handler))
         // .route("/v1/files", post(chat_handler))
         // .route("/v1/chunks", post(chat_handler))

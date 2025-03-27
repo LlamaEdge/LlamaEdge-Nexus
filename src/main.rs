@@ -253,19 +253,6 @@ impl AppState {
         }
     }
 
-    async fn add_url(&self, url_type: &UrlType, url: &Uri) -> Result<(), ServerError> {
-        let mut services = match *url_type {
-            UrlType::Chat => self.chat_urls.write().await,
-            UrlType::AudioWhisper => self.audio_urls.write().await,
-            UrlType::Image => self.image_urls.write().await,
-            UrlType::Rag => self.rag_urls.write().await,
-        };
-
-        services.push(url.clone()).await;
-
-        Ok(())
-    }
-
     pub async fn register_downstream_server(
         &self,
         server: crate::server::Server,
@@ -380,7 +367,7 @@ impl AppState {
         Ok(())
     }
 
-    pub(crate) async fn list_downstream_servers_new(
+    pub(crate) async fn list_downstream_servers(
         &self,
     ) -> ServerResult<HashMap<ServerKind, Vec<crate::server::Server>>> {
         let servers = self.server_group.read().await;
@@ -404,73 +391,6 @@ impl AppState {
         }
 
         Ok(server_groups)
-    }
-
-    async fn remove_url(&self, url_type: &UrlType, url: &Uri) -> Result<(), ServerError> {
-        let services = match *url_type {
-            UrlType::Chat => &self.chat_urls,
-            UrlType::AudioWhisper => &self.audio_urls,
-            UrlType::Image => &self.image_urls,
-            UrlType::Rag => &self.rag_urls,
-        };
-
-        let services = services.write().await;
-        let before = services.servers.read().await.len();
-        services
-            .servers
-            .write()
-            .await
-            .retain(|server| &server.url != url);
-        let after = services.servers.read().await.len();
-
-        if before == after {
-            return Err(ServerError::NotFoundServer(url_type.to_string()));
-        }
-
-        // Optionally, log the removal
-        info!(target: "stdout", "Removed {} URL: {}", url_type, url);
-
-        Ok(())
-    }
-
-    async fn list_downstream_servers(&self) -> HashMap<String, Vec<String>> {
-        let chat_servers = self
-            .chat_urls
-            .read()
-            .await
-            .servers
-            .read()
-            .await
-            .iter()
-            .map(|s| s.url.to_string())
-            .collect();
-        let whisper_servers = self
-            .audio_urls
-            .read()
-            .await
-            .servers
-            .read()
-            .await
-            .iter()
-            .map(|s| s.url.to_string())
-            .collect();
-        let image_servers = self
-            .image_urls
-            .read()
-            .await
-            .servers
-            .read()
-            .await
-            .iter()
-            .map(|s| s.url.to_string())
-            .collect();
-
-        let mut servers = HashMap::new();
-        servers.insert("chat".to_string(), chat_servers);
-        servers.insert("whisper".to_string(), whisper_servers);
-        servers.insert("image".to_string(), image_servers);
-
-        servers
     }
 }
 

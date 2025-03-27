@@ -187,109 +187,6 @@ pub(crate) async fn proxy_request(
     }
 }
 
-pub(crate) async fn add_url_handler(
-    State(state): State<AppState>,
-    Path(url_type): Path<String>,
-    body: String,
-) -> Result<Response<Body>, StatusCode> {
-    let url_type = match url_type.as_str() {
-        "chat" => UrlType::Chat,
-        "whisper" => UrlType::AudioWhisper,
-        "image" => UrlType::Image,
-        "rag" => UrlType::Rag,
-        _ => {
-            let err_msg = format!("invalid url type: {}", url_type);
-            error!(target: "stdout", "{}", &err_msg);
-            return Ok(error::internal_server_error(&err_msg));
-        }
-    };
-
-    let url: Uri = body.parse().map_err(|_| StatusCode::BAD_REQUEST)?;
-    if let Err(e) = state.add_url(&url_type, &url).await {
-        let err_msg = e.to_string();
-        info!(target: "stdout", "{}", &err_msg);
-        return Ok(error::internal_server_error(&err_msg));
-    }
-
-    info!(target: "stdout", "registered new downstream server, type: {}, url: {}", url_type, url);
-
-    // create a response with status code 200. Content-Type is JSON
-    let json_body = serde_json::json!({
-        "message": "URL registered successfully",
-        "url": url.to_string()
-    });
-
-    let response = Response::builder()
-        .status(StatusCode::OK)
-        .header("Content-Type", "application/json")
-        .body(Body::from(json_body.to_string()))
-        .unwrap();
-
-    Ok(response)
-}
-
-pub(crate) async fn remove_url_handler(
-    State(state): State<AppState>,
-    Path(url_type): Path<String>,
-    body: String,
-) -> Result<Response<Body>, StatusCode> {
-    let url_type = match url_type.as_str() {
-        "chat" => UrlType::Chat,
-        "whisper" => UrlType::AudioWhisper,
-        "image" => UrlType::Image,
-        "rag" => UrlType::Rag,
-        _ => {
-            let err_msg = format!("invalid url type: {}", url_type);
-            error!(target: "stdout", "{}", &err_msg);
-            return Ok(error::internal_server_error(&err_msg));
-        }
-    };
-
-    let url: Uri = body.parse().map_err(|_| StatusCode::BAD_REQUEST)?;
-    if let Err(e) = state.remove_url(&url_type, &url).await {
-        let err_msg = e.to_string();
-        error!(target: "stdout", "{}", &err_msg);
-        return Ok(error::internal_server_error(&err_msg));
-    }
-
-    info!(target: "stdout", "unregistered downstream server, type: {}, url: {}", url_type, url);
-
-    // create a response with status code 200. Content-Type is JSON
-    let json_body = serde_json::json!({
-        "message": "URL unregistered successfully",
-        "url": url.to_string()
-    });
-
-    let response = Response::builder()
-        .status(StatusCode::OK)
-        .header("Content-Type", "application/json")
-        .body(Body::from(json_body.to_string()))
-        .unwrap();
-
-    Ok(response)
-}
-
-pub(crate) async fn list_downstream_servers_handler(
-    State(state): State<AppState>,
-) -> Result<Response<Body>, StatusCode> {
-    let servers = state.list_downstream_servers().await;
-
-    // create a response with status code 200. Content-Type is JSON
-    let json_body = serde_json::json!({
-        "chat": servers.get("chat").unwrap(),
-        "whisper": servers.get("whisper").unwrap(),
-        "image": servers.get("image").unwrap(),
-    });
-
-    let response = Response::builder()
-        .status(StatusCode::OK)
-        .header("Content-Type", "application/json")
-        .body(Body::from(json_body.to_string()))
-        .unwrap();
-
-    Ok(response)
-}
-
 pub mod admin {
     use super::*;
 
@@ -510,7 +407,7 @@ pub mod admin {
             .unwrap_or("unknown")
             .to_string();
 
-        let servers = state.list_downstream_servers_new().await?;
+        let servers = state.list_downstream_servers().await?;
 
         // compute the total number of servers
         let total_servers = servers.values().fold(0, |acc, servers| acc + servers.len());

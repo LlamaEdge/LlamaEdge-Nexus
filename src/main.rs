@@ -12,7 +12,7 @@ mod utils;
 use anyhow::Result;
 use async_trait::async_trait;
 use axum::{http::Uri, routing::post, Router};
-use clap::{ArgGroup, Parser};
+use clap::Parser;
 use config::Config;
 use error::{ServerError, ServerResult};
 use futures_util::StreamExt;
@@ -39,8 +39,7 @@ type SharedClient = Arc<Client<HttpConnector>>;
 const DEFAULT_PORT: &str = "8080";
 
 #[derive(Debug, Parser)]
-#[command(name = "LlamaEdge Proxy Server", version = env!("CARGO_PKG_VERSION"), author = env!("CARGO_PKG_AUTHORS"), about = "LlamaEdge Proxy Server")]
-#[command(group = ArgGroup::new("socket_address_group").multiple(false).args(&["socket_addr", "port"]))]
+#[command(version = env!("CARGO_PKG_VERSION"), about = "LlamaEdge Nexus - A gateway service for LLM backends")]
 struct Cli {
     /// Path to the config file
     #[arg(long, default_value = "config.toml", value_parser = clap::value_parser!(PathBuf))]
@@ -54,6 +53,9 @@ struct Cli {
     /// Use rag-api-server instances as downstream server instead of llama-api-server instances
     #[arg(long)]
     rag: bool,
+    /// Root path for the Web UI files
+    #[arg(long, default_value = "chatbot-ui")]
+    web_ui: PathBuf,
 }
 
 #[allow(clippy::needless_return)]
@@ -101,47 +103,6 @@ async fn main() -> Result<(), ServerError> {
 
     let app_state = Arc::new(AppState::new(client, config, ServerInfo::default()));
 
-    // Build our application with routes
-    // let app = if cli.rag {
-    //     Router::new()
-    //         .route("/v1/chat/completions", post(rag_chat_handler))
-    //         .route("/v1/completions", post(rag_chat_handler))
-    //         .route("/v1/models", post(rag_chat_handler))
-    //         .route("/v1/embeddings", post(rag_chat_handler))
-    //         .route("/v1/files", post(rag_chat_handler))
-    //         .route("/v1/chunks", post(rag_chat_handler))
-    //         .route("/v1/create/rag", post(rag_chat_handler))
-    //         .route("/v1/retrieve", post(rag_chat_handler))
-    //         .route("/v1/audio/transcriptions", post(audio_whisper_handler))
-    //         .route("/v1/audio/translations", post(audio_whisper_handler))
-    //         .route("/v1/images/generations", post(image_handler))
-    //         .route("/v1/images/edits", post(image_handler))
-    //         .route("/admin/register/:type", post(add_url_handler))
-    //         .route("/admin/unregister/:type", post(remove_url_handler))
-    //         .route("/admin/servers", post(list_downstream_servers_handler))
-    //         .with_state(app_state)
-    // } else {
-    //     Router::new()
-    //         .route("/v1/chat/completions", post(chat_handler))
-    //         .route("/v1/completions", post(chat_handler))
-    //         .route("/v1/models", post(chat_handler))
-    //         .route("/v1/embeddings", post(chat_handler))
-    //         .route("/v1/files", post(chat_handler))
-    //         .route("/v1/chunks", post(chat_handler))
-    //         .route("/v1/audio/transcriptions", post(audio_whisper_handler))
-    //         .route("/v1/audio/translations", post(audio_whisper_handler))
-    //         .route("/v1/images/generations", post(image_handler))
-    //         .route("/v1/images/edits", post(image_handler))
-    //         .route("/admin/register/:type", post(add_url_handler))
-    //         .route("/admin/unregister/:type", post(remove_url_handler))
-    //         .route(
-    //             "/admin/servers/register",
-    //             post(handler::admin::register_downstream_server_handler),
-    //         )
-    //         .route("/admin/servers", post(list_downstream_servers_handler))
-    //         .with_state(app_state)
-    // };
-
     let app = Router::new()
         .route("/v1/chat/completions", post(handler::chat_handler))
         // .route("/v1/completions", post(chat_handler))
@@ -167,6 +128,12 @@ async fn main() -> Result<(), ServerError> {
             "/admin/servers",
             post(handler::admin::list_downstream_servers_handler),
         )
+        // .nest_service(
+        //     "/",
+        //     ServeDir::new(&cli.web_ui).not_found_service(
+        //         ServeDir::new(&cli.web_ui).append_index_html_on_directories(true),
+        //     ),
+        // )
         .with_state(app_state);
 
     // socket address
@@ -186,11 +153,6 @@ async fn main() -> Result<(), ServerError> {
         Ok(_) => Ok(()),
         Err(e) => Err(ServerError::Operation(e.to_string())),
     }
-}
-
-#[async_trait]
-trait RoutingPolicy: Sync + Send {
-    async fn next(&self) -> Result<Uri, ServerError>;
 }
 
 /// Represents a LlamaEdge API server
@@ -228,31 +190,6 @@ impl Services {
     async fn push(&mut self, url: Uri) {
         let server = Server::new(url);
         self.servers.write().await.push(server)
-    }
-}
-#[async_trait]
-impl RoutingPolicy for Services {
-    async fn next(&self) -> Result<Uri, ServerError> {
-        if self.servers.read().await.is_empty() {
-            return Err(ServerError::NotFoundServer(self.ty().to_string()));
-        }
-
-        let servers = self.servers.read().await;
-        let server = if servers.len() == 1 {
-            servers.first().unwrap()
-        } else {
-            servers
-                .iter()
-                .min_by(|s1, s2| {
-                    s1.connections
-                        .load(Ordering::Relaxed)
-                        .cmp(&s2.connections.load(Ordering::Relaxed))
-                })
-                .unwrap()
-        };
-
-        server.connections.fetch_add(1, Ordering::Relaxed);
-        Ok(server.url.clone())
     }
 }
 

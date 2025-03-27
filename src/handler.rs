@@ -398,6 +398,92 @@ pub(crate) async fn audio_translations_handler(
     }
 }
 
+pub(crate) async fn audio_tts_handler(
+    State(state): State<Arc<AppState>>,
+    req: Request<Body>,
+) -> ServerResult<Response<Body>> {
+    // Get request ID from headers
+    let request_id = req
+        .headers()
+        .get("x-request-id")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+
+    info!(target: "stdout", "Received a new audio speech request - request_id: {}", request_id);
+
+    // get the tts server
+    let tts_server_base_url = {
+        let servers = state.server_group.read().await;
+        let tts_servers = match servers.get(&ServerKind::tts) {
+            Some(servers) => servers,
+            None => {
+                let err_msg = "No tts server available";
+                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                return Err(ServerError::Operation(err_msg.to_string()));
+            }
+        };
+
+        match tts_servers.next().await {
+            Ok(url) => url,
+            Err(e) => {
+                let err_msg = format!("Failed to get the tts server: {}", e);
+                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                return Err(ServerError::Operation(err_msg));
+            }
+        }
+    };
+
+    let tts_service_url = format!("{}v1/audio/speech", tts_server_base_url);
+    info!(target: "stdout", "Forward the audio speech request to {} - request_id: {}", tts_service_url, request_id);
+
+    // Create request client
+    let mut request_builder = reqwest::Client::new().post(tts_service_url);
+    for (name, value) in req.headers().iter() {
+        request_builder = request_builder.header(name, value);
+    }
+
+    let body_bytes = hyper::body::to_bytes(req.into_body()).await.map_err(|e| {
+        let err_msg = format!("Failed to convert the request body into bytes: {}", e);
+        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        ServerError::Operation(err_msg)
+    })?;
+
+    let ds_response = request_builder.body(body_bytes).send().await.map_err(|e| {
+        let err_msg = format!(
+            "Failed to forward the request to the downstream server: {}",
+            e
+        );
+        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        ServerError::Operation(err_msg)
+    })?;
+
+    // create a response builder with the status and headers of the downstream response
+    let mut response_builder = Response::builder().status(ds_response.status());
+    for (name, value) in ds_response.headers().iter() {
+        response_builder = response_builder.header(name, value);
+    }
+
+    // Handle response body reading with cancellation
+    let bytes = ds_response.bytes().await.map_err(|e| {
+        let err_msg = format!("Failed to get the full response as bytes: {}", e);
+        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        ServerError::Operation(err_msg)
+    })?;
+
+    match response_builder.body(Body::from(bytes)) {
+        Ok(response) => {
+            info!(target: "stdout", "Audio speech request completed successfully - request_id: {}", request_id);
+            Ok(response)
+        }
+        Err(e) => {
+            let err_msg = format!("Failed to create the response: {}", e);
+            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+            Err(ServerError::Operation(err_msg))
+        }
+    }
+}
+
 pub mod admin {
     use super::*;
 

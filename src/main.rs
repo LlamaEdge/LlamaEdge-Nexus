@@ -10,7 +10,10 @@ mod server;
 mod utils;
 
 use anyhow::Result;
-use axum::{routing::post, Router};
+use axum::{
+    routing::{get, post},
+    Router,
+};
 use clap::Parser;
 use config::Config;
 use error::{ServerError, ServerResult};
@@ -100,6 +103,7 @@ async fn main() -> Result<(), ServerError> {
         .route("/v1/images/edits", post(handler::image_handler))
         .route("/v1/create/rag", post(handler::create_rag_handler))
         .route("/v1/chunks", post(handler::chunks_handler))
+        .route("/v1/models", get(handler::models_handler))
         // .route("/v1/embeddings", post(chat_handler))
         // .route("/v1/files", post(chat_handler))
         // .route("/v1/chunks", post(chat_handler))

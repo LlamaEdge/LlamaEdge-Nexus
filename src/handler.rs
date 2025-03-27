@@ -938,6 +938,39 @@ pub(crate) async fn chunks_handler(
         })
 }
 
+pub(crate) async fn models_handler(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> ServerResult<Response<Body>> {
+    let request_id = headers
+        .get("x-request-id")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+
+    let models = state.models.read().await;
+    let list_response = ListModelsResponse {
+        object: String::from("list"),
+        data: models.values().flatten().cloned().collect(),
+    };
+
+    let json_body = serde_json::to_string(&list_response).map_err(|e| {
+        let err_msg = format!("Failed to serialize the models: {}", e);
+        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        ServerError::Operation(err_msg)
+    })?;
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "application/json")
+        .body(Body::from(json_body))
+        .map_err(|e| {
+            let err_msg = format!("Failed to create response: {}", e);
+            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+            ServerError::Operation(err_msg)
+        })
+}
+
 pub mod admin {
     use super::*;
 

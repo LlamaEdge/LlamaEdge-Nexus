@@ -3,19 +3,23 @@ extern crate log;
 
 mod error;
 mod handler;
+mod info;
+mod server;
 mod utils;
 
 use anyhow::Result;
 use async_trait::async_trait;
 use axum::{http::Uri, routing::post, Router};
 use clap::{ArgGroup, Parser};
-use error::ServerError;
-use handler::*;
+use error::{ServerError, ServerResult};
+use futures_util::StreamExt;
 use hyper::{client::HttpConnector, Client};
+use server::{ServerGroup, ServerKind};
 use std::{
     collections::HashMap,
     fmt,
     net::SocketAddr,
+    str::FromStr,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -70,44 +74,75 @@ async fn main() -> Result<(), ServerError> {
     // Create a shared HTTP client
     let client = Arc::new(Client::new());
 
-    let app_state = AppState::new(client);
+    let app_state = Arc::new(AppState::new(client));
 
     // Build our application with routes
-    let app = if cli.rag {
-        Router::new()
-            .route("/v1/chat/completions", post(rag_chat_handler))
-            .route("/v1/completions", post(rag_chat_handler))
-            .route("/v1/models", post(rag_chat_handler))
-            .route("/v1/embeddings", post(rag_chat_handler))
-            .route("/v1/files", post(rag_chat_handler))
-            .route("/v1/chunks", post(rag_chat_handler))
-            .route("/v1/create/rag", post(rag_chat_handler))
-            .route("/v1/retrieve", post(rag_chat_handler))
-            .route("/v1/audio/transcriptions", post(audio_whisper_handler))
-            .route("/v1/audio/translations", post(audio_whisper_handler))
-            .route("/v1/images/generations", post(image_handler))
-            .route("/v1/images/edits", post(image_handler))
-            .route("/admin/register/:type", post(add_url_handler))
-            .route("/admin/unregister/:type", post(remove_url_handler))
-            .route("/admin/servers", post(list_downstream_servers_handler))
-            .with_state(app_state)
-    } else {
-        Router::new()
-            .route("/v1/chat/completions", post(chat_handler))
-            .route("/v1/completions", post(chat_handler))
-            .route("/v1/models", post(chat_handler))
-            .route("/v1/embeddings", post(chat_handler))
-            .route("/v1/files", post(chat_handler))
-            .route("/v1/chunks", post(chat_handler))
-            .route("/v1/audio/transcriptions", post(audio_whisper_handler))
-            .route("/v1/audio/translations", post(audio_whisper_handler))
-            .route("/v1/images/generations", post(image_handler))
-            .route("/v1/images/edits", post(image_handler))
-            .route("/admin/register/:type", post(add_url_handler))
-            .route("/admin/unregister/:type", post(remove_url_handler))
-            .route("/admin/servers", post(list_downstream_servers_handler))
-            .with_state(app_state)
-    };
+    // let app = if cli.rag {
+    //     Router::new()
+    //         .route("/v1/chat/completions", post(rag_chat_handler))
+    //         .route("/v1/completions", post(rag_chat_handler))
+    //         .route("/v1/models", post(rag_chat_handler))
+    //         .route("/v1/embeddings", post(rag_chat_handler))
+    //         .route("/v1/files", post(rag_chat_handler))
+    //         .route("/v1/chunks", post(rag_chat_handler))
+    //         .route("/v1/create/rag", post(rag_chat_handler))
+    //         .route("/v1/retrieve", post(rag_chat_handler))
+    //         .route("/v1/audio/transcriptions", post(audio_whisper_handler))
+    //         .route("/v1/audio/translations", post(audio_whisper_handler))
+    //         .route("/v1/images/generations", post(image_handler))
+    //         .route("/v1/images/edits", post(image_handler))
+    //         .route("/admin/register/:type", post(add_url_handler))
+    //         .route("/admin/unregister/:type", post(remove_url_handler))
+    //         .route("/admin/servers", post(list_downstream_servers_handler))
+    //         .with_state(app_state)
+    // } else {
+    //     Router::new()
+    //         .route("/v1/chat/completions", post(chat_handler))
+    //         .route("/v1/completions", post(chat_handler))
+    //         .route("/v1/models", post(chat_handler))
+    //         .route("/v1/embeddings", post(chat_handler))
+    //         .route("/v1/files", post(chat_handler))
+    //         .route("/v1/chunks", post(chat_handler))
+    //         .route("/v1/audio/transcriptions", post(audio_whisper_handler))
+    //         .route("/v1/audio/translations", post(audio_whisper_handler))
+    //         .route("/v1/images/generations", post(image_handler))
+    //         .route("/v1/images/edits", post(image_handler))
+    //         .route("/admin/register/:type", post(add_url_handler))
+    //         .route("/admin/unregister/:type", post(remove_url_handler))
+    //         .route(
+    //             "/admin/servers/register",
+    //             post(handler::admin::register_downstream_server_handler),
+    //         )
+    //         .route("/admin/servers", post(list_downstream_servers_handler))
+    //         .with_state(app_state)
+    // };
+
+    let app = Router::new()
+        // .route("/v1/chat/completions", post(chat_handler))
+        // .route("/v1/completions", post(chat_handler))
+        // .route("/v1/models", post(chat_handler))
+        // .route("/v1/embeddings", post(chat_handler))
+        // .route("/v1/files", post(chat_handler))
+        // .route("/v1/chunks", post(chat_handler))
+        // .route("/v1/audio/transcriptions", post(audio_whisper_handler))
+        // .route("/v1/audio/translations", post(audio_whisper_handler))
+        // .route("/v1/images/generations", post(image_handler))
+        // .route("/v1/images/edits", post(image_handler))
+        // .route("/admin/register/:type", post(add_url_handler))
+        // .route("/admin/unregister/:type", post(remove_url_handler))
+        .route(
+            "/admin/servers/register",
+            post(handler::admin::register_downstream_server_handler),
+        )
+        .route(
+            "/admin/servers/unregister",
+            post(handler::admin::remove_downstream_server_handler),
+        )
+        .route(
+            "/admin/servers",
+            post(handler::admin::list_downstream_servers_handler),
+        )
+        .with_state(app_state);
 
     // socket address
     let addr = match cli.socket_addr {
@@ -203,6 +238,7 @@ struct AppState {
     audio_urls: Arc<RwLock<Services>>,
     image_urls: Arc<RwLock<Services>>,
     rag_urls: Arc<RwLock<Services>>,
+    server_group: Arc<RwLock<HashMap<ServerKind, ServerGroup>>>,
 }
 
 impl AppState {
@@ -213,6 +249,7 @@ impl AppState {
             audio_urls: Arc::new(RwLock::new(Services::new(UrlType::AudioWhisper))),
             image_urls: Arc::new(RwLock::new(Services::new(UrlType::Image))),
             rag_urls: Arc::new(RwLock::new(Services::new(UrlType::Rag))),
+            server_group: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -227,6 +264,146 @@ impl AppState {
         services.push(url.clone()).await;
 
         Ok(())
+    }
+
+    pub async fn register_downstream_server(
+        &self,
+        server: crate::server::Server,
+    ) -> ServerResult<()> {
+        if server.kind.contains(ServerKind::chat) {
+            self.server_group
+                .write()
+                .await
+                .entry(ServerKind::chat)
+                .or_insert(ServerGroup::new(ServerKind::chat))
+                .register(server.clone())
+                .await?;
+        }
+        if server.kind.contains(ServerKind::embeddings) {
+            self.server_group
+                .write()
+                .await
+                .entry(ServerKind::embeddings)
+                .or_insert(ServerGroup::new(ServerKind::embeddings))
+                .register(server.clone())
+                .await?;
+        }
+        if server.kind.contains(ServerKind::image) {
+            self.server_group
+                .write()
+                .await
+                .entry(ServerKind::image)
+                .or_insert(ServerGroup::new(ServerKind::image))
+                .register(server.clone())
+                .await?;
+        }
+        if server.kind.contains(ServerKind::tts) {
+            self.server_group
+                .write()
+                .await
+                .entry(ServerKind::tts)
+                .or_insert(ServerGroup::new(ServerKind::tts))
+                .register(server.clone())
+                .await?;
+        }
+        if server.kind.contains(ServerKind::translate) {
+            self.server_group
+                .write()
+                .await
+                .entry(ServerKind::translate)
+                .or_insert(ServerGroup::new(ServerKind::translate))
+                .register(server.clone())
+                .await?;
+        }
+        if server.kind.contains(ServerKind::transcribe) {
+            self.server_group
+                .write()
+                .await
+                .entry(ServerKind::transcribe)
+                .or_insert(ServerGroup::new(ServerKind::transcribe))
+                .register(server.clone())
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    pub async fn unregister_downstream_server(
+        &self,
+        server_id: impl AsRef<str>,
+    ) -> ServerResult<()> {
+        let mut found = false;
+
+        // unregister the server from the servers
+        {
+            // parse server kind from server id
+            let kinds = server_id
+                .as_ref()
+                .split("-server-")
+                .next()
+                .unwrap()
+                .split("-")
+                .collect::<Vec<&str>>();
+
+            let group_map = self.server_group.read().await;
+
+            for kind in kinds {
+                let kind = ServerKind::from_str(kind).unwrap();
+                if let Some(group) = group_map.get(&kind) {
+                    group.unregister(server_id.as_ref()).await?;
+                    info!(target: "stdout", "Unregistered {} server: {}", &kind, server_id.as_ref());
+
+                    if !found {
+                        found = true;
+                    }
+                }
+            }
+        }
+
+        // if found {
+        //     // remove the server info from the server_info
+        //     let mut server_info = self.server_info.write().await;
+        //     server_info.servers.remove(server_id.as_ref());
+
+        //     // remove the server from the models
+        //     let mut models = self.models.write().await;
+        //     models.remove(server_id.as_ref());
+        // }
+
+        if !found {
+            return Err(ServerError::Operation(format!(
+                "Server {} not found",
+                server_id.as_ref()
+            )));
+        }
+
+        Ok(())
+    }
+
+    pub(crate) async fn list_downstream_servers_new(
+        &self,
+    ) -> ServerResult<HashMap<ServerKind, Vec<crate::server::Server>>> {
+        let servers = self.server_group.read().await;
+
+        let mut server_groups = HashMap::new();
+        for (kind, group) in servers.iter() {
+            if !group.is_empty().await {
+                let servers = group.servers.read().await;
+
+                // Create a new Vec with cloned Server instances using async stream
+                let server_vec = futures_util::stream::iter(servers.iter())
+                    .then(|server_lock| async move {
+                        let server = server_lock.read().await;
+                        server.clone()
+                    })
+                    .collect::<Vec<_>>()
+                    .await;
+
+                server_groups.insert(*kind, server_vec);
+            }
+        }
+
+        Ok(server_groups)
     }
 
     async fn remove_url(&self, url_type: &UrlType, url: &Uri) -> Result<(), ServerError> {

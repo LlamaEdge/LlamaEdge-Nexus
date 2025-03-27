@@ -1,3 +1,4 @@
+use axum::{http::StatusCode, response::IntoResponse, Json};
 use hyper::{Body, Response};
 use thiserror::Error;
 
@@ -89,4 +90,27 @@ pub enum ServerError {
     /// Generic error returned while performing an operation
     #[error("{0}")]
     Operation(String),
+    #[error("Invalid server kind: {0}")]
+    InvalidServerKind(String),
+    #[error("Bad request: {0}")]
+    BadRequest(String),
+    #[error("Failed to load config: {0}")]
+    FailedToLoadConfig(String),
 }
+impl IntoResponse for ServerError {
+    fn into_response(self) -> axum::response::Response {
+        let (status, err_response) = match &self {
+            ServerError::SocketAddr(e) => (StatusCode::BAD_REQUEST, e.to_string()),
+            ServerError::ArgumentError(e) => (StatusCode::BAD_REQUEST, e.to_string()),
+            ServerError::Operation(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+            ServerError::NotFoundServer(e) => (StatusCode::NOT_FOUND, e.to_string()),
+            ServerError::InvalidServerKind(e) => (StatusCode::BAD_REQUEST, e.to_string()),
+            ServerError::BadRequest(e) => (StatusCode::BAD_REQUEST, e.to_string()),
+            ServerError::FailedToLoadConfig(e) => (StatusCode::BAD_REQUEST, e.to_string()),
+        };
+
+        (status, Json(err_response)).into_response()
+    }
+}
+
+pub type ServerResult<T> = std::result::Result<T, ServerError>;

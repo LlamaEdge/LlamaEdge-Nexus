@@ -26,14 +26,14 @@ jobs:
         with:
           target: wasm32-wasip1
 
-      - name: Build llama-proxy-server
-        id: build-llama-proxy-server
+      - name: Build LlamaEdge-Nexus
+        id: build-llama-nexus
         env:
           RUSTFLAGS: "--cfg wasmedge --cfg tokio_unstable"
         run: |
           cargo clean
           cargo build --target wasm32-wasip1 --release
-          cp target/wasm32-wasip1/release/llama-proxy-server.wasm ./llama-proxy-server.wasm
+          cp target/wasm32-wasip1/release/llama-nexus.wasm ./llama-nexus.wasm
 
       - name: Calculate checksum
         id: checksum
@@ -47,7 +47,7 @@ jobs:
         id: tag_and_release_names
         run: |
           echo "tag_name=${{ github.event.inputs.release_version }}" >> $GITHUB_OUTPUT
-          echo "release_name=Llama-Proxy-Server ${{ github.event.inputs.release_version }}" >> $GITHUB_OUTPUT
+          echo "release_name=LlamaEdge-Nexus ${{ github.event.inputs.release_version }}" >> $GITHUB_OUTPUT
 
       - name: Create Release and Upload Release Asset
         if: ${{ github.event.inputs.create_release == 'true' && github.ref == 'refs/heads/main'}}
@@ -59,5 +59,5 @@ jobs:
           draft: true
           prerelease: true
           files: |
-            llama-proxy-server.wasm
+            llama-nexus.wasm
             SHA256SUM

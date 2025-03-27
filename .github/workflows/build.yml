@@ -33,7 +33,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-22.04, macos-13, macos-14]
+        os: [ubuntu-22.04, macos-13, macos-14, macos-15]
+        wasmedge_version: [0.14.1]
     steps:
       - name: Clone project
         id: checkout
@@ -65,19 +66,24 @@ jobs:
           tar -xzvf wasi-sdk-24.0-arm64-macos.tar.gz
           mv wasi-sdk-24.0-arm64-macos wasi-sdk-24.0
 
-      # - name: Run clippy
-      #   if: startsWith(matrix.os, 'ubuntu')
-      #   env:
-      #     RUSTFLAGS: "--cfg wasmedge --cfg tokio_unstable"
-      #   run: |
-      #     cargo +nightly clippy --target wasm32-wasip1 -- -D warnings
+      - name: Run clippy
+        if: startsWith(matrix.os, 'ubuntu')
+        env:
+          RUSTFLAGS: "--cfg wasmedge --cfg tokio_unstable"
+        run: |
+          cargo +nightly clippy --target wasm32-wasip1 -- -D warnings
 
-      # - name: Run fmt
-      #   if: startsWith(matrix.os, 'ubuntu')
-      #   env:
-      #     RUSTFLAGS: "--cfg wasmedge --cfg tokio_unstable"
-      #   run: |
-      #     cargo +nightly fmt --all -- --check
+      - name: Run fmt
+        if: startsWith(matrix.os, 'ubuntu')
+        env:
+          RUSTFLAGS: "--cfg wasmedge --cfg tokio_unstable"
+        run: |
+          cargo +nightly fmt --all -- --check
+
+      - name: Install WasmEdge
+        run: |
+          curl -sSf https://raw.githubusercontent.com/WasmEdge/WasmEdge/master/utils/install_v2.sh | bash -s -- -v ${{ matrix.wasmedge_version }}
+          ls -al $HOME/.wasmedge/bin
 
       - name: Build on linux
         if: startsWith(matrix.os, 'ubuntu')
@@ -85,6 +91,7 @@ jobs:
           RUSTFLAGS: "--cfg wasmedge --cfg tokio_unstable"
         run: |
           cargo build --release
+          $HOME/.wasmedge/bin/wasmedge ./target/wasm32-wasip1/release/llama-nexus.wasm --version
 
       - name: Build on macos
         if: startsWith(matrix.os, 'macos')
@@ -94,3 +101,4 @@ jobs:
           RUSTFLAGS: "--cfg wasmedge --cfg tokio_unstable"
         run: |
           cargo build --release
+          $HOME/.wasmedge/bin/wasmedge ./target/wasm32-wasip1/release/llama-nexus.wasm --version

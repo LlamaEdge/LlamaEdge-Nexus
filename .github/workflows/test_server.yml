@@ -56,81 +56,138 @@ jobs:
         with:
           target: wasm32-wasip1
 
-      - name: Install WasmEdge
-        run: |
-          curl -sSf https://raw.githubusercontent.com/WasmEdge/WasmEdge/master/utils/install_v2.sh | bash -s -- -v ${{ matrix.wasmedge_version }}
-          ls -al $HOME/.wasmedge/bin
-
-      - name: Deploy whisper plugin
-        run: |
-          curl -LO https://github.com/WasmEdge/WasmEdge/releases/download/${{ matrix.wasmedge_version }}/WasmEdge-plugin-wasi_nn-whisper-${{ matrix.wasmedge_version }}-ubuntu20.04_x86_64.tar.gz
-          tar -xzvf WasmEdge-plugin-wasi_nn-whisper-${{ matrix.wasmedge_version }}-ubuntu20.04_x86_64.tar.gz
-          mkdir -p $HOME/whisper/plugin/
-          ls -al
-
-          mv libwasmedgePluginWasiNN.so $HOME/whisper/plugin/
-          ls -al $HOME/whisper/plugin/
-
-      - name: Build llama-proxy-server
-        env:
-          RUSTFLAGS: "--cfg wasmedge --cfg tokio_unstable"
-        run: |
-          cargo build --release
-          cp target/wasm32-wasip1/release/llama-proxy-server.wasm .
-          ls -al
-
       - name: Install Hurl
         run: |
           curl --location --remote-name https://github.com/Orange-OpenSource/hurl/releases/download/5.0.1/hurl_5.0.1_amd64.deb
           sudo apt update && sudo apt install ./hurl_5.0.1_amd64.deb
 
-      - name: Download api-server
+      - name: Install WasmEdge
         run: |
-          curl -LO https://github.com/LlamaEdge/LlamaEdge/releases/download/${{ matrix.llama_api_server_version }}/llama-api-server.wasm
-          curl -LO https://github.com/LlamaEdge/whisper-api-server/releases/download/${{ matrix.whisper_api_server_version }}/whisper-api-server.wasm
+          curl -sSf https://raw.githubusercontent.com/WasmEdge/WasmEdge/master/utils/install_v2.sh | bash -s -- -v ${{ matrix.wasmedge_version }}
+          ls -al $HOME/.wasmedge/bin
 
-      - name: Download model used by llama-api-server
+      - name: Build llama-nexus
+        env:
+          RUSTFLAGS: "--cfg wasmedge --cfg tokio_unstable"
         run: |
-          curl -LO https://huggingface.co/second-state/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/Qwen2.5-0.5B-Instruct-Q5_K_M.gguf
+          cargo build --release
+          cp target/wasm32-wasip1/release/llama-nexus.wasm .
           ls -al
 
-      - name: Download whisper model and audio files
+      - name: Build llama-api-server.wasm
+        env:
+          RUSTFLAGS: "--cfg wasmedge --cfg tokio_unstable"
         run: |
-          curl -LO https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin
-          curl -LO https://github.com/LlamaEdge/whisper-api-server/raw/refs/heads/main/data/test.wav
-          ls -al
-          mv test.wav ./tests/
+          git clone -b refactor-update-serverinfo https://github.com/LlamaEdge/LlamaEdge.git
+          cd LlamaEdge
+          cargo build --release
+          cp target/wasm32-wasip1/release/llama-api-server.wasm ../llama-api-server.wasm
+          cd -
 
-      - name: Start llama-api-server at 10086 port
-        run: |
-          nohup $HOME/.wasmedge/bin/wasmedge --dir .:. --nn-preload default:GGML:AUTO:Qwen2.5-0.5B-Instruct-Q5_K_M.gguf llama-api-server.wasm --model-name Qwen2.5-0.5B-Instruct --prompt-template chatml --ctx-size 4096 --socket-addr 0.0.0.0:10086 > ./start-llama.log 2>&1 &
-          sleep 5
-          cat start-llama.log
-
-      - name: Start whisper-api-server at 10087 port
-        run: |
-          WASMEDGE_PLUGIN_PATH=~/whisper/plugin nohup $HOME/.wasmedge/bin/wasmedge --dir .:. whisper-api-server.wasm -m ggml-medium.bin --socket-addr 0.0.0.0:10087 > ./start-llamaedge.log 2>&1 &
-          sleep 5
-          cat start-llamaedge.log
-
-      - name: Start llama-proxy-server at a8080 port
-        run: |
-          nohup $HOME/.wasmedge/bin/wasmedge llama-proxy-server.wasm --port 8080 > ./start-gateway.log 2>&1 &
-          sleep 5
-          cat start-gateway.log
-
-      - name: register servers
-        run: |
-          # register llama-api-server
-          curl --location 'http://localhost:8080/admin/register/chat' --header 'Content-Type: text/plain' --data 'http://localhost:10086'
-          # register whisper-api-server
-          curl --location 'http://localhost:8080/admin/register/whisper' --header 'Content-Type: text/plain' --data 'http://localhost:10087'
-          cat start-gateway.log
-
-      # - name: Run test
+      # - name: Deploy whisper plugin
       #   run: |
-      #     hurl --test --repeat 10 tests/*.hurl
+      #     curl -LO https://github.com/WasmEdge/WasmEdge/releases/download/${{ matrix.wasmedge_version }}/WasmEdge-plugin-wasi_nn-whisper-${{ matrix.wasmedge_version }}-ubuntu20.04_x86_64.tar.gz
+      #     tar -xzvf WasmEdge-plugin-wasi_nn-whisper-${{ matrix.wasmedge_version }}-ubuntu20.04_x86_64.tar.gz
+      #     mkdir -p $HOME/whisper/plugin/
+      #     ls -al
 
-      - name: Stop api-server
+      #     mv libwasmedgePluginWasiNN.so $HOME/whisper/plugin/
+      #     ls -al $HOME/whisper/plugin/
+
+      - name: Start chat server
+        run: |
+          curl -LO https://huggingface.co/second-state/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_0.gguf
+          nohup $HOME/.wasmedge/bin/wasmedge --dir .:. --nn-preload default:GGML:AUTO:Llama-3.2-1B-Instruct-Q4_0.gguf llama-api-server.wasm --model-name Llama-3.2-1B --prompt-template llama-3-chat --ctx-size 4096 --port 10010 > ./chat-server.log 2>&1 &
+          sleep 15
+          cat chat-server.log
+
+      - name: Start embedding server
+        run: |
+          curl -LO https://huggingface.co/second-state/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5-Q4_0.gguf
+          nohup $HOME/.wasmedge/bin/wasmedge --dir .:. --nn-preload default:GGML:AUTO:nomic-embed-text-v1.5-Q4_0.gguf llama-api-server.wasm --model-name nomic-embed-text-v1.5 --prompt-template embedding --ctx-size 768 --port 10011 > ./embedding-server.log 2>&1 &
+          sleep 15
+          cat embedding-server.log
+
+      # - name: Start whisper-api-server
+      #   run: |
+      #     curl -LO https://github.com/LlamaEdge/whisper-api-server/releases/download/${{ matrix.whisper_api_server_version }}/whisper-api-server.wasm
+      #     curl -LO https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v2-q5_0.bin
+      #     nohup env WASMEDGE_PLUGIN_PATH=$HOME/whisper/plugin $HOME/.wasmedge/bin/wasmedge --dir .:. whisper-api-server.wasm -m ggml-large-v2-q5_0.bin --port 10011 > ./start-whisper.log 2>&1 &
+      #     sleep 15
+      #     cat start-whisper.log
+
+      - name: Start LlamaEdge-Nexus
+        run: |
+          nohup ./llama-nexus > ./llama-nexus.log 2>&1 &
+          sleep 5
+          cat llama-nexus.log
+
+      - name: Print LlamaEdge-Nexus logs on failure
+        if: failure()
+        run: |
+          echo "LlamaEdge-Nexus logs:"
+          cat  llama-nexus.log
+
+      - name: Register chat server
+        run: |
+          curl --location 'http://localhost:9068/admin/servers/register' --header 'Content-Type: application/json' --data '{"url": "http://localhost:10010","kind": "chat"}'
+          sleep 5
+
+      - name: Print chat server logs on failure
+        if: failure()
+        run: |
+          echo "chat server logs:"
+          cat chat-server.log
+
+      - name: Register embedding server
+        run: |
+          curl --location 'http://localhost:9068/admin/servers/register' --header 'Content-Type: application/json' --data '{"url": "http://localhost:10011","kind": "embedding"}'
+          sleep 5
+
+      - name: Print chat server logs on failure
+        if: failure()
+        run: |
+          echo "chat server logs:"
+          cat chat-server.log
+
+      - name: Run test_chat.hurl
+        if: always()
+        run: |
+          hurl --test --jobs 1 ./tests/test_chat.hurl
+
+      - name: Run test_embedding.hurl
+        if: always()
+        run: |
+          hurl --test --jobs 1 ./tests/test_embedding.hurl
+
+      # - name: Run test_transcribe.hurl
+      #   if: always()
+      #   run: |
+      #     cp ./tests/assets/test.wav ./tests/test.wav
+      #     hurl --test --jobs 1 ./tests/test_transcribe.hurl
+
+      # - name: Print whisper logs on failure
+      #   if: always()
+      #   run: |
+      #     echo "Whisper server logs:"
+      #     cat ./start-whisper.log
+
+      # - name: Run test_translate.hurl
+      #   if: always()
+      #   run: |
+      #     cp ./tests/assets/test_cn.wav ./tests/test_cn.wav
+      #     hurl --test --jobs 1 ./tests/test_translate.hurl
+
+      # - name: Print whisper logs on failure
+      #   if: always()
+      #   run: |
+      #     echo "Whisper server logs:"
+      #     cat ./start-whisper.log
+
+      - name: Stop LlamaEdge-Nexus
+        run: |
+          pkill -f llama-nexus
+
+      - name: Stop llama-api-server and whisper-api-server
         run: |
           pkill -f wasmedge

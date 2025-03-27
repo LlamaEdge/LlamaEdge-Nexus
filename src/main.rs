@@ -10,33 +10,16 @@ mod server;
 mod utils;
 
 use anyhow::Result;
-use async_trait::async_trait;
-use axum::{http::Uri, routing::post, Router};
+use axum::{routing::post, Router};
 use clap::Parser;
 use config::Config;
 use error::{ServerError, ServerResult};
 use futures_util::StreamExt;
-use hyper::{client::HttpConnector, Client};
 use info::ServerInfo;
-use server::{ServerGroup, ServerKind};
-use std::{
-    collections::HashMap,
-    fmt,
-    net::SocketAddr,
-    path::PathBuf,
-    str::FromStr,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
-};
+use server::{Server, ServerGroup, ServerId, ServerKind};
+use std::{collections::HashMap, net::SocketAddr, path::PathBuf, str::FromStr, sync::Arc};
 use tokio::{net::TcpListener, sync::RwLock};
 use utils::LogLevel;
-
-type SharedClient = Arc<Client<HttpConnector>>;
-
-// default port of LlamaEdge Proxy Server
-const DEFAULT_PORT: &str = "8080";
 
 #[derive(Debug, Parser)]
 #[command(version = env!("CARGO_PKG_VERSION"), about = "LlamaEdge Nexus - A gateway service for LLM backends")]
@@ -48,7 +31,7 @@ struct Cli {
     #[arg(long, default_value = None, value_parser = clap::value_parser!(SocketAddr), group = "socket_address_group")]
     socket_addr: Option<SocketAddr>,
     /// Socket address of llama-proxy-server instance
-    #[arg(long, default_value = DEFAULT_PORT, value_parser = clap::value_parser!(u16), group = "socket_address_group")]
+    #[arg(long, default_value = "8080", value_parser = clap::value_parser!(u16), group = "socket_address_group")]
     port: u16,
     /// Use rag-api-server instances as downstream server instead of llama-api-server instances
     #[arg(long)]
@@ -81,9 +64,6 @@ async fn main() -> Result<(), ServerError> {
     // log the version of the server
     info!(target: "stdout", "version: {}", env!("CARGO_PKG_VERSION"));
 
-    // Create a shared HTTP client
-    let client = Arc::new(Client::new());
-
     // Load the config based on the command
     let config = match Config::load(&cli.config) {
         Ok(mut config) => {
@@ -101,7 +81,7 @@ async fn main() -> Result<(), ServerError> {
         }
     };
 
-    let app_state = Arc::new(AppState::new(client, config, ServerInfo::default()));
+    let app_state = Arc::new(AppState::new(config, ServerInfo::default()));
 
     let app = Router::new()
         .route("/v1/chat/completions", post(handler::chat_handler))
@@ -155,74 +135,25 @@ async fn main() -> Result<(), ServerError> {
     }
 }
 
-/// Represents a LlamaEdge API server
-#[derive(Debug)]
-struct Server {
-    url: Uri,
-    connections: AtomicUsize,
-}
-impl Server {
-    fn new(url: Uri) -> Self {
-        Self {
-            url,
-            connections: AtomicUsize::new(0),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct Services {
-    servers: RwLock<Vec<Server>>,
-    ty: UrlType,
-}
-impl Services {
-    fn new(ty: UrlType) -> Self {
-        Self {
-            servers: RwLock::new(Vec::new()),
-            ty,
-        }
-    }
-
-    fn ty(&self) -> UrlType {
-        self.ty.clone()
-    }
-
-    async fn push(&mut self, url: Uri) {
-        let server = Server::new(url);
-        self.servers.write().await.push(server)
-    }
-}
-
 #[derive(Clone)]
 struct AppState {
-    client: SharedClient,
-    chat_urls: Arc<RwLock<Services>>,
-    audio_urls: Arc<RwLock<Services>>,
-    image_urls: Arc<RwLock<Services>>,
-    rag_urls: Arc<RwLock<Services>>,
     config: Arc<RwLock<Config>>,
     server_group: Arc<RwLock<HashMap<ServerKind, ServerGroup>>>,
     server_info: Arc<RwLock<ServerInfo>>,
+    models: Arc<RwLock<HashMap<ServerId, Vec<endpoints::models::Model>>>>,
 }
 
 impl AppState {
-    fn new(client: SharedClient, config: Config, server_info: ServerInfo) -> Self {
+    fn new(config: Config, server_info: ServerInfo) -> Self {
         Self {
-            client,
-            chat_urls: Arc::new(RwLock::new(Services::new(UrlType::Chat))),
-            audio_urls: Arc::new(RwLock::new(Services::new(UrlType::AudioWhisper))),
-            image_urls: Arc::new(RwLock::new(Services::new(UrlType::Image))),
-            rag_urls: Arc::new(RwLock::new(Services::new(UrlType::Rag))),
             server_group: Arc::new(RwLock::new(HashMap::new())),
             config: Arc::new(RwLock::new(config)),
             server_info: Arc::new(RwLock::new(server_info)),
+            models: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
-    pub async fn register_downstream_server(
-        &self,
-        server: crate::server::Server,
-    ) -> ServerResult<()> {
+    pub async fn register_downstream_server(&self, server: Server) -> ServerResult<()> {
         if server.kind.contains(ServerKind::chat) {
             self.server_group
                 .write()
@@ -313,15 +244,15 @@ impl AppState {
             }
         }
 
-        // if found {
-        //     // remove the server info from the server_info
-        //     let mut server_info = self.server_info.write().await;
-        //     server_info.servers.remove(server_id.as_ref());
+        if found {
+            // remove the server info from the server_info
+            let mut server_info = self.server_info.write().await;
+            server_info.servers.remove(server_id.as_ref());
 
-        //     // remove the server from the models
-        //     let mut models = self.models.write().await;
-        //     models.remove(server_id.as_ref());
-        // }
+            // remove the server from the models
+            let mut models = self.models.write().await;
+            models.remove(server_id.as_ref());
+        }
 
         if !found {
             return Err(ServerError::Operation(format!(
@@ -357,23 +288,5 @@ impl AppState {
         }
 
         Ok(server_groups)
-    }
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-enum UrlType {
-    AudioWhisper,
-    Chat,
-    Image,
-    Rag,
-}
-impl fmt::Display for UrlType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            UrlType::Chat => write!(f, "chat"),
-            UrlType::AudioWhisper => write!(f, "whisper"),
-            UrlType::Image => write!(f, "image"),
-            UrlType::Rag => write!(f, "rag"),
-        }
     }
 }

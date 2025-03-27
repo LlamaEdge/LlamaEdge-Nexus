@@ -3,7 +3,7 @@ use crate::{
     info::{ApiServer, ModelConfig},
     rag,
     server::{RoutingPolicy, Server, ServerIdToRemove, ServerKind},
-    AppState, SharedClient, UrlType,
+    AppState,
 };
 use axum::{
     body::Body,
@@ -229,7 +229,7 @@ pub mod admin {
     pub async fn register_downstream_server_handler(
         State(state): State<Arc<AppState>>,
         headers: HeaderMap,
-        Json(mut server): Json<Server>,
+        Json(server): Json<Server>,
     ) -> ServerResult<Response<Body>> {
         // Get request ID from headers
         let request_id = headers
@@ -367,32 +367,32 @@ pub mod admin {
             }
         }
 
-        // // update the server info
-        // let server_info = &mut state.server_info.write().await;
-        // server_info
-        //     .servers
-        //     .insert(server_id.to_string(), api_server);
+        // update the server info
+        let server_info = &mut state.server_info.write().await;
+        server_info
+            .servers
+            .insert(server_id.to_string(), api_server);
 
-        // // get the models from the downstream server
-        // let list_models_url = format!("{}/v1/models", server_url);
-        // let list_models_response = client.get(&list_models_url).send().await.map_err(|e| {
-        //     let err_msg = format!("Failed to get the models from the downstream server: {}", e);
-        //     error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
-        //     ServerError::Operation(err_msg)
-        // })?;
+        // get the models from the downstream server
+        let list_models_url = format!("{}/v1/models", server_url);
+        let list_models_response = client.get(&list_models_url).send().await.map_err(|e| {
+            let err_msg = format!("Failed to get the models from the downstream server: {}", e);
+            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+            ServerError::Operation(err_msg)
+        })?;
 
-        // let list_models_response = list_models_response
-        //     .json::<ListModelsResponse>()
-        //     .await
-        //     .map_err(|e| {
-        //         let err_msg = format!("Failed to parse the models: {}", e);
-        //         error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
-        //         ServerError::Operation(err_msg)
-        //     })?;
+        let list_models_response = list_models_response
+            .json::<ListModelsResponse>()
+            .await
+            .map_err(|e| {
+                let err_msg = format!("Failed to parse the models: {}", e);
+                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                ServerError::Operation(err_msg)
+            })?;
 
-        // // update the models
-        // let mut models = state.models.write().await;
-        // models.insert(server_id.to_string(), list_models_response.data);
+        // update the models
+        let mut models = state.models.write().await;
+        models.insert(server_id.to_string(), list_models_response.data);
 
         Ok(())
     }

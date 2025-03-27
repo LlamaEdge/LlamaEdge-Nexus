@@ -1,5 +1,5 @@
 use crate::{
-    error::{self, ServerError, ServerResult},
+    error::{ServerError, ServerResult},
     info::{ApiServer, ModelConfig},
     rag,
     server::{RoutingPolicy, Server, ServerIdToRemove, ServerKind},
@@ -213,6 +213,181 @@ pub async fn embeddings_handler(
     {
         Ok(response) => {
             info!(target: "stdout", "Embeddings request completed successfully - request_id: {}", request_id);
+            Ok(response)
+        }
+        Err(e) => {
+            let err_msg = format!("Failed to create the response: {}", e);
+            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+            Err(ServerError::Operation(err_msg))
+        }
+    }
+}
+
+pub(crate) async fn audio_transcriptions_handler(
+    State(state): State<Arc<AppState>>,
+    req: Request<Body>,
+) -> ServerResult<Response<Body>> {
+    // Get request ID from headers
+    let request_id = req
+        .headers()
+        .get("x-request-id")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+
+    info!(target: "stdout", "Received a new audio transcription request - request_id: {}", request_id);
+
+    // get the transcribe server
+    let transcribe_server_base_url = {
+        let servers = state.server_group.read().await;
+        let transcribe_servers = match servers.get(&ServerKind::transcribe) {
+            Some(servers) => servers,
+            None => {
+                let err_msg = "No transcribe server available";
+                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                return Err(ServerError::Operation(err_msg.to_string()));
+            }
+        };
+
+        match transcribe_servers.next().await {
+            Ok(url) => url,
+            Err(e) => {
+                let err_msg = format!("Failed to get the transcribe server: {}", e);
+                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                return Err(ServerError::Operation(err_msg));
+            }
+        }
+    };
+
+    let transcription_service_url =
+        format!("{}v1/audio/transcriptions", transcribe_server_base_url);
+    info!(target: "stdout", "Forward the audio transcription request to {} - request_id: {}", transcription_service_url, request_id);
+
+    // Create request client
+    let mut request_builder = reqwest::Client::new().post(transcription_service_url);
+    for (name, value) in req.headers().iter() {
+        request_builder = request_builder.header(name, value);
+    }
+
+    // convert the request body into bytes
+    let body_bytes = hyper::body::to_bytes(req.into_body()).await.map_err(|e| {
+        let err_msg = format!("Failed to convert the request body into bytes: {}", e);
+        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        ServerError::Operation(err_msg)
+    })?;
+
+    let ds_response = request_builder.body(body_bytes).send().await.map_err(|e| {
+        let err_msg = format!(
+            "Failed to forward the request to the downstream server: {}",
+            e
+        );
+        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        ServerError::Operation(err_msg)
+    })?;
+
+    let status = ds_response.status();
+
+    // Handle response body reading with cancellation
+    let bytes = ds_response.bytes().await.map_err(|e| {
+        let err_msg = format!("Failed to get the full response as bytes: {}", e);
+        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        ServerError::Operation(err_msg)
+    })?;
+
+    match Response::builder()
+        .status(status)
+        .header("Content-Type", "application/json")
+        .body(Body::from(bytes))
+    {
+        Ok(response) => {
+            info!(target: "stdout", "Audio transcription request completed successfully - request_id: {}", request_id);
+            Ok(response)
+        }
+        Err(e) => {
+            let err_msg = format!("Failed to create the response: {}", e);
+            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+            Err(ServerError::Operation(err_msg))
+        }
+    }
+}
+
+pub(crate) async fn audio_translations_handler(
+    State(state): State<Arc<AppState>>,
+    req: Request<Body>,
+) -> ServerResult<Response<Body>> {
+    // Get request ID from headers
+    let request_id = req
+        .headers()
+        .get("x-request-id")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+
+    info!(target: "stdout", "Received a new audio translation request - request_id: {}", request_id);
+
+    // get the transcribe server
+    let translate_server_base_url = {
+        let servers = state.server_group.read().await;
+        let translate_servers = match servers.get(&ServerKind::translate) {
+            Some(servers) => servers,
+            None => {
+                let err_msg = "No translate server available";
+                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                return Err(ServerError::Operation(err_msg.to_string()));
+            }
+        };
+
+        match translate_servers.next().await {
+            Ok(url) => url,
+            Err(e) => {
+                let err_msg = format!("Failed to get the translate server: {}", e);
+                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                return Err(ServerError::Operation(err_msg));
+            }
+        }
+    };
+
+    let translation_service_url = format!("{}v1/audio/translations", translate_server_base_url);
+    info!(target: "stdout", "Forward the audio translation request to {} - request_id: {}", translation_service_url, request_id);
+
+    // Create request client
+    let mut request_builder = reqwest::Client::new().post(translation_service_url);
+    for (name, value) in req.headers().iter() {
+        request_builder = request_builder.header(name, value);
+    }
+
+    // convert the request body into bytes
+    let body_bytes = hyper::body::to_bytes(req.into_body()).await.map_err(|e| {
+        let err_msg = format!("Failed to convert the request body into bytes: {}", e);
+        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        ServerError::Operation(err_msg)
+    })?;
+
+    let ds_response = request_builder.body(body_bytes).send().await.map_err(|e| {
+        let err_msg = format!(
+            "Failed to forward the request to the downstream server: {}",
+            e
+        );
+        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        ServerError::Operation(err_msg)
+    })?;
+
+    let status = ds_response.status();
+
+    // Handle response body reading with cancellation
+    let bytes = ds_response.bytes().await.map_err(|e| {
+        let err_msg = format!("Failed to get the full response as bytes: {}", e);
+        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        ServerError::Operation(err_msg)
+    })?;
+
+    match Response::builder()
+        .status(status)
+        .header("Content-Type", "application/json")
+        .body(Body::from(bytes))
+    {
+        Ok(response) => {
+            info!(target: "stdout", "Audio translation request completed successfully - request_id: {}", request_id);
             Ok(response)
         }
         Err(e) => {

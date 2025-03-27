@@ -86,7 +86,15 @@ async fn main() -> Result<(), ServerError> {
     let app = Router::new()
         .route("/v1/chat/completions", post(handler::chat_handler))
         // .route("/v1/completions", post(chat_handler))
-        .route("/v1/models", post(handler::embeddings_handler))
+        .route("/v1/embeddings", post(handler::embeddings_handler))
+        .route(
+            "/v1/audio/transcriptions",
+            post(handler::audio_transcriptions_handler),
+        )
+        .route(
+            "/v1/audio/translations",
+            post(handler::audio_translations_handler),
+        )
         // .route("/v1/embeddings", post(chat_handler))
         // .route("/v1/files", post(chat_handler))
         // .route("/v1/chunks", post(chat_handler))

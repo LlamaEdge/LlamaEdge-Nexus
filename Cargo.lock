@@ -3,6 +3,34 @@
 version = 4
 
 [[package]]
+name = "LlamaEdge-Nexus"
+version = "0.1.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "bitflags 2.9.0",
+ "bytes",
+ "chat-prompts",
+ "clap",
+ "config",
+ "endpoints",
+ "futures-util",
+ "hyper",
+ "log",
+ "qdrant_rest_client",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "text-splitter",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-util",
+ "uuid",
+ "wasi-logger",
+]
+
+[[package]]
 name = "addr2line"
 version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1493,34 +1521,6 @@ name = "litemap"
 version = "0.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23fb14cb19457329c82206317a5663005a4d404783dc74f4252769b0d5f42856"
-
-[[package]]
-name = "llama-proxy-server"
-version = "0.1.1"
-dependencies = [
- "anyhow",
- "async-trait",
- "axum",
- "bitflags 2.9.0",
- "bytes",
- "chat-prompts",
- "clap",
- "config",
- "endpoints",
- "futures-util",
- "hyper",
- "log",
- "qdrant_rest_client",
- "reqwest",
- "serde",
- "serde_json",
- "text-splitter",
- "thiserror 1.0.69",
- "tokio",
- "tokio-util",
- "uuid",
- "wasi-logger",
-]
 
 [[package]]
 name = "lock_api"

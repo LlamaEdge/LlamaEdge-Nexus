@@ -1,5 +1,5 @@
 [package]
-name    = "llama-proxy-server"
+name    = "LlamaEdge-Nexus"
 version = "0.1.1"
 edition = "2021"
 
@@ -35,3 +35,7 @@ tokio   = { git = "https://github.com/second-state/wasi_tokio.git", branch = "v1
 socket2 = { git = "https://github.com/second-state/socket2.git", branch = "v0.5.x" }
 hyper   = { git = "https://github.com/second-state/wasi_hyper.git", branch = "v0.14.x" }
 reqwest = { git = "https://github.com/second-state/wasi_reqwest.git", branch = "0.11.x" }
+
+[[bin]]
+name = "llama-nexus"
+path = "src/main.rs"

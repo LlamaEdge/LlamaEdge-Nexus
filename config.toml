@@ -1,0 +1,19 @@
+[server]
+host = "0.0.0.0"    # The host to listen on.
+port = 9068         # The port to listen on.
+
+[rag]
+prompt     = ""     # Custom rag prompt. Optional.
+rag_policy = "system-message" # Strategy for merging RAG context into chat messages. Possible values: "system-message", "last-user-message". Required if enable is true.
+context_window = 1 # Maximum number of user messages used in the retrieval.
+
+[rag.vector_db]                             # Vector database configuration.
+url             = "http://localhost:6333"   # The URL of the vector database.
+collection_name = ["default"]               # The name of the collection to use.
+limit           = 10                        # The maximum number of results to return.
+score_threshold = 0.5                       # The minimum score threshold for a result to be returned.
+
+[rag.kw_search]                         # Keyword search configuration.
+enable     = false                      # Whether to enable keyword search.
+url        = "http://localhost:9069"    # The URL of the keyword search service.
+index_name = "default"                  # The name of the index to use.

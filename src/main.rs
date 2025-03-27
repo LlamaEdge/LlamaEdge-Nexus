@@ -1,9 +1,11 @@
 #[macro_use]
 extern crate log;
 
+mod config;
 mod error;
 mod handler;
 mod info;
+mod rag;
 mod server;
 mod utils;
 
@@ -11,14 +13,17 @@ use anyhow::Result;
 use async_trait::async_trait;
 use axum::{http::Uri, routing::post, Router};
 use clap::{ArgGroup, Parser};
+use config::Config;
 use error::{ServerError, ServerResult};
 use futures_util::StreamExt;
 use hyper::{client::HttpConnector, Client};
+use info::ServerInfo;
 use server::{ServerGroup, ServerKind};
 use std::{
     collections::HashMap,
     fmt,
     net::SocketAddr,
+    path::PathBuf,
     str::FromStr,
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -37,6 +42,9 @@ const DEFAULT_PORT: &str = "8080";
 #[command(name = "LlamaEdge Proxy Server", version = env!("CARGO_PKG_VERSION"), author = env!("CARGO_PKG_AUTHORS"), about = "LlamaEdge Proxy Server")]
 #[command(group = ArgGroup::new("socket_address_group").multiple(false).args(&["socket_addr", "port"]))]
 struct Cli {
+    /// Path to the config file
+    #[arg(long, default_value = "config.toml", value_parser = clap::value_parser!(PathBuf))]
+    config: PathBuf,
     /// Socket address of llama-proxy-server instance. For example, `0.0.0.0:8080`.
     #[arg(long, default_value = None, value_parser = clap::value_parser!(SocketAddr), group = "socket_address_group")]
     socket_addr: Option<SocketAddr>,
@@ -74,7 +82,24 @@ async fn main() -> Result<(), ServerError> {
     // Create a shared HTTP client
     let client = Arc::new(Client::new());
 
-    let app_state = Arc::new(AppState::new(client));
+    // Load the config based on the command
+    let config = match Config::load(&cli.config) {
+        Ok(mut config) => {
+            if cli.rag {
+                config.rag.enable = true;
+                info!(target: "stdout", "RAG is enabled");
+            }
+
+            config
+        }
+        Err(e) => {
+            let err_msg = format!("Failed to load config: {}", e);
+            error!(target: "stdout", "{}", err_msg);
+            return Err(ServerError::FailedToLoadConfig(err_msg));
+        }
+    };
+
+    let app_state = Arc::new(AppState::new(client, config, ServerInfo::default()));
 
     // Build our application with routes
     // let app = if cli.rag {
@@ -238,11 +263,13 @@ struct AppState {
     audio_urls: Arc<RwLock<Services>>,
     image_urls: Arc<RwLock<Services>>,
     rag_urls: Arc<RwLock<Services>>,
+    config: Arc<RwLock<Config>>,
     server_group: Arc<RwLock<HashMap<ServerKind, ServerGroup>>>,
+    server_info: Arc<RwLock<ServerInfo>>,
 }
 
 impl AppState {
-    fn new(client: SharedClient) -> Self {
+    fn new(client: SharedClient, config: Config, server_info: ServerInfo) -> Self {
         Self {
             client,
             chat_urls: Arc::new(RwLock::new(Services::new(UrlType::Chat))),
@@ -250,6 +277,8 @@ impl AppState {
             image_urls: Arc::new(RwLock::new(Services::new(UrlType::Image))),
             rag_urls: Arc::new(RwLock::new(Services::new(UrlType::Rag))),
             server_group: Arc::new(RwLock::new(HashMap::new())),
+            config: Arc::new(RwLock::new(config)),
+            server_info: Arc::new(RwLock::new(server_info)),
         }
     }
 

@@ -4,31 +4,31 @@ version = "0.1.1"
 edition = "2021"
 
 [dependencies]
-axum = { version = "^0.6", features = ["multipart"] }
-bytes = "1"
-futures-util = "0.3"
-tokio = { version = "1", features = ["rt", "macros", "net", "time", "io-util"] }
-hyper = { version = "0.14", features = ["full"] }
-serde_json = "1.0"
-log = { version = "0.4.21", features = ["std", "kv", "kv_serde"] }
-wasi-logger = { version = "0.1.2", features = ["kv"] }
-async-trait = "0.1.82"
-clap = { version = "4.4.6", features = ["cargo", "derive"] }
 anyhow = "1"
-thiserror = "1"
-serde = { version = "1.0", features = ["derive"] }
+async-trait = "0.1.82"
+axum = { version = "^0.6", features = ["multipart"] }
 bitflags = "2.9.0"
-uuid = { version = "1.7.0", features = ["v4"] }
-reqwest = { version = "^0.11", default-features = false, features = ["rustls-tls", "json", "stream"] }
+bytes = "1"
 chat-prompts = { version = "0.25.0", git = "https://github.com/LlamaEdge/LlamaEdge.git", branch = "refactor-update-serverinfo" }
+clap = { version = "4.4.6", features = ["cargo", "derive"] }
+config = { version = "^0.15", features = ["toml"] }
 endpoints = { version = "0.25.1", features = [
     "whisper",
     "rag",
 ], git = "https://github.com/LlamaEdge/LlamaEdge.git", branch = "refactor-update-serverinfo" }
+futures-util = "0.3"
+hyper = { version = "0.14", features = ["full"] }
+log = { version = "0.4.21", features = ["std", "kv", "kv_serde"] }
 qdrant = { package = "qdrant_rest_client", version = "0.2.1" }
+reqwest = { version = "^0.11", default-features = false, features = ["rustls-tls", "json", "stream"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 text-splitter = { version = "^0.24", features = ["tiktoken-rs", "markdown"] }
+thiserror = "1"
+tokio = { version = "1", features = ["rt", "macros", "net", "time", "io-util"] }
 tokio-util = "0.7.13"
-config = { version = "^0.15", features = ["toml"] }
+uuid = { version = "1.7.0", features = ["v4"] }
+wasi-logger = { version = "0.1.2", features = ["kv"] }
 
 [patch.crates-io]
 tokio   = { git = "https://github.com/second-state/wasi_tokio.git", branch = "v1.36.x" }

@@ -1,5 +1,6 @@
+
 # test /v1/chat/completions endpoint
-POST http://localhost:10086/v1/chat/completions
+POST http://localhost:10010/v1/chat/completions
 Accept: application/json
 Content-Type: application/json
 ```json
@@ -10,11 +11,11 @@ Content-Type: application/json
             "content": "What is the capital of France?"
         }
     ],
-    "model": "Qwen2.5-0.5B-Instruct",
+    "model": "Llama-3.2-1B",
     "stream": false
 }
 ```
 HTTP 200
 [Asserts]
-jsonpath "$.model" == "Qwen2.5-0.5B-Instruct"
+jsonpath "$.model" == "Llama-3.2-1B"
 jsonpath "$.choices[0].message.content" contains "Paris"

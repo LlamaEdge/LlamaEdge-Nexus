@@ -37,7 +37,7 @@ jobs:
       matrix:
         wasmedge_version: [0.14.1]
         llama_api_server_version: [0.14.4]
-        whisper_api_server_version: [0.3.0]
+        whisper_api_server_version: [0.4.2]
 
     steps:
       - name: Clone project
@@ -84,37 +84,15 @@ jobs:
           cp target/wasm32-wasip1/release/llama-api-server.wasm ../llama-api-server.wasm
           cd -
 
-      # - name: Deploy whisper plugin
-      #   run: |
-      #     curl -LO https://github.com/WasmEdge/WasmEdge/releases/download/${{ matrix.wasmedge_version }}/WasmEdge-plugin-wasi_nn-whisper-${{ matrix.wasmedge_version }}-ubuntu20.04_x86_64.tar.gz
-      #     tar -xzvf WasmEdge-plugin-wasi_nn-whisper-${{ matrix.wasmedge_version }}-ubuntu20.04_x86_64.tar.gz
-      #     mkdir -p $HOME/whisper/plugin/
-      #     ls -al
-
-      #     mv libwasmedgePluginWasiNN.so $HOME/whisper/plugin/
-      #     ls -al $HOME/whisper/plugin/
-
-      - name: Start chat server
+      - name: Deploy whisper plugin
         run: |
-          curl -LO https://huggingface.co/second-state/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_0.gguf
-          nohup $HOME/.wasmedge/bin/wasmedge --dir .:. --nn-preload default:GGML:AUTO:Llama-3.2-1B-Instruct-Q4_0.gguf llama-api-server.wasm --model-name Llama-3.2-1B --prompt-template llama-3-chat --ctx-size 4096 --port 10010 > ./chat-server.log 2>&1 &
-          sleep 15
-          cat chat-server.log
+          curl -LO https://github.com/WasmEdge/WasmEdge/releases/download/${{ matrix.wasmedge_version }}/WasmEdge-plugin-wasi_nn-whisper-${{ matrix.wasmedge_version }}-ubuntu20.04_x86_64.tar.gz
+          tar -xzvf WasmEdge-plugin-wasi_nn-whisper-${{ matrix.wasmedge_version }}-ubuntu20.04_x86_64.tar.gz
+          mkdir -p $HOME/whisper/plugin/
+          ls -al
 
-      - name: Start embedding server
-        run: |
-          curl -LO https://huggingface.co/second-state/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5-Q4_0.gguf
-          nohup $HOME/.wasmedge/bin/wasmedge --dir .:. --nn-preload default:GGML:AUTO:nomic-embed-text-v1.5-Q4_0.gguf llama-api-server.wasm --model-name nomic-embed-text-v1.5 --prompt-template embedding --ctx-size 768 --port 10011 > ./embedding-server.log 2>&1 &
-          sleep 15
-          cat embedding-server.log
-
-      # - name: Start whisper-api-server
-      #   run: |
-      #     curl -LO https://github.com/LlamaEdge/whisper-api-server/releases/download/${{ matrix.whisper_api_server_version }}/whisper-api-server.wasm
-      #     curl -LO https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v2-q5_0.bin
-      #     nohup env WASMEDGE_PLUGIN_PATH=$HOME/whisper/plugin $HOME/.wasmedge/bin/wasmedge --dir .:. whisper-api-server.wasm -m ggml-large-v2-q5_0.bin --port 10011 > ./start-whisper.log 2>&1 &
-      #     sleep 15
-      #     cat start-whisper.log
+          mv libwasmedgePluginWasiNN.so $HOME/whisper/plugin/
+          ls -al $HOME/whisper/plugin/
 
       - name: Start LlamaEdge-Nexus
         run: |
@@ -128,6 +106,13 @@ jobs:
           echo "LlamaEdge-Nexus logs:"
           cat  llama-nexus.log
 
+      - name: Start chat server
+        run: |
+          curl -LO https://huggingface.co/second-state/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_0.gguf
+          nohup $HOME/.wasmedge/bin/wasmedge --dir .:. --nn-preload default:GGML:AUTO:Llama-3.2-1B-Instruct-Q4_0.gguf llama-api-server.wasm --model-name Llama-3.2-1B --prompt-template llama-3-chat --ctx-size 4096 --port 10010 > ./chat-server.log 2>&1 &
+          sleep 15
+          cat chat-server.log
+
       - name: Register chat server
         if: success()
         run: |
@@ -140,17 +125,62 @@ jobs:
           echo "chat server logs:"
           cat chat-server.log
 
+      - name: Print llama-nexus logs on failure
+        if: failure()
+        run: |
+          echo "llama-nexus logs:"
+          cat llama-nexus.log
+
+      - name: Start embedding server
+        run: |
+          curl -LO https://huggingface.co/second-state/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5-Q4_0.gguf
+          nohup $HOME/.wasmedge/bin/wasmedge --dir .:. --nn-preload default:GGML:AUTO:nomic-embed-text-v1.5-Q4_0.gguf llama-api-server.wasm --model-name nomic-embed-text-v1.5 --prompt-template embedding --ctx-size 768 --port 10011 > ./embedding-server.log 2>&1 &
+          sleep 15
+          cat embedding-server.log
+
       - name: Register embedding server
         if: success()
         run: |
           curl --location 'http://localhost:9068/admin/servers/register' --header 'Content-Type: application/json' --data '{"url": "http://localhost:10011","kind": "embeddings"}'
           sleep 5
 
-      - name: Print chat server logs on failure
+      - name: Print embedding server logs on failure
         if: failure()
         run: |
-          echo "chat server logs:"
-          cat chat-server.log
+          echo "embedding server logs:"
+          cat embedding-server.log
+
+      - name: Print llama-nexus logs on failure
+        if: failure()
+        run: |
+          echo "llama-nexus logs:"
+          cat llama-nexus.log
+
+      - name: Start whisper server
+        run: |
+          curl -LO https://github.com/LlamaEdge/whisper-api-server/releases/download/${{ matrix.whisper_api_server_version }}/whisper-api-server.wasm
+          curl -LO https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v2-q5_0.bin
+          nohup env WASMEDGE_PLUGIN_PATH=$HOME/whisper/plugin $HOME/.wasmedge/bin/wasmedge --dir .:. whisper-api-server.wasm -m ggml-large-v2-q5_0.bin --port 10012 > ./whisper-server.log 2>&1 &
+          sleep 15
+          cat whisper-server.log
+
+      - name: Register whisper server
+        if: success()
+        run: |
+          curl --location 'http://localhost:9068/admin/servers/register' --header 'Content-Type: application/json' --data '{"url": "http://localhost:10012","kind": "translate,transcribe"}'
+          sleep 5
+
+      - name: Print whisper server logs on failure
+        if: failure()
+        run: |
+          echo "whisper server logs:"
+          cat whisper-server.log
+
+      - name: Print llama-nexus logs on failure
+        if: failure()
+        run: |
+          echo "llama-nexus logs:"
+          cat llama-nexus.log
 
       - name: Test chat server
         if: success()

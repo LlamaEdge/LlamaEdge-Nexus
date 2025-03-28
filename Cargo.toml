@@ -27,6 +27,7 @@ text-splitter = { version = "^0.24", features = ["tiktoken-rs", "markdown"] }
 thiserror = "1"
 tokio = { version = "1", features = ["rt", "macros", "net", "time", "io-util"] }
 tokio-util = "0.7.13"
+tower-http = { version = "0.4", features = ["fs"] }
 uuid = { version = "1.7.0", features = ["v4"] }
 wasi-logger = { version = "0.1.2", features = ["kv"] }
 

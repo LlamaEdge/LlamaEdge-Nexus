@@ -28,6 +28,7 @@ use std::{
     sync::Arc,
 };
 use tokio::{net::TcpListener, sync::RwLock};
+use tower_http::services::ServeDir;
 use utils::LogLevel;
 
 #[derive(Debug, Parser)]
@@ -123,13 +124,13 @@ async fn main() -> Result<(), ServerError> {
             "/admin/servers",
             post(handler::admin::list_downstream_servers_handler),
         )
-        // .nest_service(
-        //     "/",
-        //     ServeDir::new(&cli.web_ui).not_found_service(
-        //         ServeDir::new(&cli.web_ui).append_index_html_on_directories(true),
-        //     ),
-        // )
-        .with_state(app_state);
+        .nest_service(
+            "/",
+            ServeDir::new(&cli.web_ui).not_found_service(
+                ServeDir::new(&cli.web_ui).append_index_html_on_directories(true),
+            ),
+        )
+        .with_state(app_state.clone());
 
     // create a tcp listener
     let tcp_listener = TcpListener::bind(addr).await.unwrap();

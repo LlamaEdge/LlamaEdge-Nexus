@@ -6,11 +6,11 @@ LlamaEdge-Nexus is a gateway service for managing and orchestrating LlamaEdge AP
 
 - Download LlamaEdge-Nexus binary
 
-  The LlamaEdge-Nexus binaries can be found at the [release page](https://github.com/LlamaEdge/llama-proxy-server/releases). To download the binary, you can use the following command:
+  The LlamaEdge-Nexus binaries can be found at the [release page](https://github.com/LlamaEdge/LlamaEdge-Nexus/releases). To download the binary, you can use the following command:
 
   ```bash
   # Download
-  curl -LO https://github.com/LlamaEdge/llama-proxy-server/releases/latest/download/llama-nexus-wasm32-wasip1.tar.gz
+  curl -LO https://github.com/LlamaEdge/LlamaEdge-Nexus/releases/latest/download/llama-nexus-wasm32-wasip1.tar.gz
 
   # Extract the file
   tar -xzvf llama-nexus-wasm32-wasip1.tar.gz

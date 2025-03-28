@@ -210,29 +210,41 @@ jobs:
           echo "llama-nexus logs:"
           cat llama-nexus.log
 
-      # - name: Run test_transcribe.hurl
-      #   if: always()
-      #   run: |
-      #     cp ./tests/assets/test.wav ./tests/test.wav
-      #     hurl --test --jobs 1 ./tests/test_transcribe.hurl
+      - name: Test whisper server - transcription
+        if: success()
+        run: |
+          cp ./tests/assets/test.wav ./tests/test.wav
+          hurl --test --jobs 1 ./tests/test_transcribe.hurl
 
-      # - name: Print whisper logs on failure
-      #   if: always()
-      #   run: |
-      #     echo "Whisper server logs:"
-      #     cat ./start-whisper.log
+      - name: Print whisper logs on failure
+        if: failure()
+        run: |
+          echo "Whisper server logs:"
+          cat whisper-server.log
 
-      # - name: Run test_translate.hurl
-      #   if: always()
-      #   run: |
-      #     cp ./tests/assets/test_cn.wav ./tests/test_cn.wav
-      #     hurl --test --jobs 1 ./tests/test_translate.hurl
+      - name: Print llama-nexus logs on failure
+        if: failure()
+        run: |
+          echo "llama-nexus logs:"
+          cat llama-nexus.log
 
-      # - name: Print whisper logs on failure
-      #   if: always()
-      #   run: |
-      #     echo "Whisper server logs:"
-      #     cat ./start-whisper.log
+      - name: Test whisper server - translation
+        if: success()
+        run: |
+          cp ./tests/assets/test_cn.wav ./tests/test_cn.wav
+          hurl --test --jobs 1 ./tests/test_translate.hurl
+
+      - name: Print whisper logs on failure
+        if: failure()
+        run: |
+          echo "Whisper server logs:"
+          cat whisper-server.log
+
+      - name: Print llama-nexus logs on failure
+        if: failure()
+        run: |
+          echo "llama-nexus logs:"
+          cat llama-nexus.log
 
       - name: Stop LlamaEdge-Nexus
         run: |

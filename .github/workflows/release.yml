@@ -1,4 +1,4 @@
-name: Release LlamaEdge-Nexus
+name: Release
 
 on:
   workflow_dispatch: # manual trigger release

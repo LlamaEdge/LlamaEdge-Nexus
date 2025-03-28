@@ -1,4 +1,4 @@
-name: Test LlamaEdge-Nexus
+name: Test
 
 on:
   push:

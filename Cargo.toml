@@ -1,7 +1,10 @@
 [package]
-name    = "LlamaEdge-Nexus"
-version = "0.2.0"
-edition = "2021"
+name        = "LlamaEdge-Nexus"
+version     = "0.2.0"
+edition     = "2021"
+description = "LlamaEdge-Nexus is a gateway service for LLM backends"
+license     = "Apache-2.0"
+repository  = "https://github.com/LlamaEdge/LlamaEdge-Nexus"
 
 [dependencies]
 anyhow = "1"

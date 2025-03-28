@@ -1,22 +1,26 @@
 # LlamaEdge-Nexus
 
 LlamaEdge-Nexus is a gateway service for managing and orchestrating LlamaEdge API servers. It provides a unified interface to various AI services including chat completions, audio processing, image generation, and text-to-speech capabilities. Compatible with OpenAI API, LlamaEdge-Nexus allows you to use familiar API formats while working with open-source models. With LlamaEdge-Nexus, you can easily register and manage multiple API servers, handle requests, and monitor the health of your AI services.
-<!--
+
 ## Installation
 
 - Download LlamaEdge-Nexus binary
 
-  The LlamaEdge-Nexus binaries can be found at the [release page](https://github.com/llamaedge/llamaedge-nexus/releases). To download the binary, you can use the following command:
+  The LlamaEdge-Nexus binaries can be found at the [release page](https://github.com/LlamaEdge/llama-proxy-server/releases). To download the binary, you can use the following command:
 
   ```bash
-  # Download llama-nexus.wasm
-  curl -L https://github.com/LlamaEdge/LlamaEdge-Nexus/releases/latest/download/llama-nexus.wasm -o llama-nexus.wasm
+  # Download
+  curl -LO https://github.com/LlamaEdge/llama-proxy-server/releases/latest/download/llama-nexus-wasm32-wasip1.tar.gz
+
+  # Extract the file
+  tar -xzvf llama-nexus-wasm32-wasip1.tar.gz
   ```
 
   After decompressing the file, you will see the following files in the current directory.
 
   ```bash
   llama-nexus.wasm
+  config.toml
   SHA256SUM
   ```
 
@@ -29,11 +33,7 @@ LlamaEdge-Nexus is a gateway service for managing and orchestrating LlamaEdge AP
   - `sd-api-server` provides image generation and editing APIs. [Release Page](https://github.com/LlamaEdge/sd-api-server/releases)
   - `tts-api-server` provides text-to-speech APIs. [Release Page](https://github.com/LlamaEdge/tts-api-server/releases)
 
-  To download the `llama-api-server`, for example, use the following command:
-
-  ```bash
-  curl -L https://github.com/LlamaEdge/LlamaEdge/releases/latest/download/llama-api-server.wasm -o llama-api-server.wasm
-  ```
+  In the following steps, we will use the `llama-api-server` as an example to show how to register a chat server into LlamaEdge-Nexus, and send a chat-completion request to the port LlamaEdge-Nexus is listening on.
 
 - Install WasmEdge Runtime
 
@@ -53,15 +53,21 @@ LlamaEdge-Nexus is a gateway service for managing and orchestrating LlamaEdge AP
   Run the following command to start LlamaEdge-Nexus:
 
   ```bash
-  # Start LlamaEdge-Nexus with the default config file at default port 9069
-  llama-nexus --config config.toml
+  # Start LlamaEdge-Nexus with the default config file at default port 9068
+  wasmedge --dir .:. llama-nexus.wasm --config config.toml
   ```
 
   For the details about the CLI options, please refer to the [Command Line Usage](#command-line-usage) section.
 
-- Register LlamaEdge API Servers to LlamaEdge-Nexus
+- Start and register a chat server
 
-  Run the following commands to start LlamaEdge API Servers first:
+  Let's download `llama-api-server.wasm` first:
+
+  ```bash
+  curl -L https://github.com/LlamaEdge/LlamaEdge/releases/latest/download/llama-api-server.wasm -o llama-api-server.wasm
+  ```
+
+  Then, start the chat server:
 
   ```bash
   # Download a gguf model file, for example, Llama-3.2-3B-Instruct-Q5_K_M.gguf
@@ -76,7 +82,7 @@ LlamaEdge-Nexus is a gateway service for managing and orchestrating LlamaEdge AP
     --port 10010
   ```
 
-  Then, register the LlamaEdge API Servers to LlamaEdge-Nexus:
+  Now, register the chat server to LlamaEdge-Nexus:
 
   ```bash
   curl --location 'http://localhost:9068/admin/servers/register' \
@@ -113,20 +119,40 @@ curl --location 'http://localhost:9068/v1/chat/completions' \
         },
         {
             "role": "user",
-            "content": "What is the capital of France?"
-        },
-        {
-            "content": "Paris",
-            "role": "assistant"
-        },
-        {
-            "role": "user",
-            "content": "How many planets are in the solar system?"
+            "content": "What is the location of Paris, France?"
         }
     ],
+    "model": "Llama-3.2-3B",
     "stream": false
 }'
-``` -->
+```
+
+The response will be:
+
+```bash
+{
+    "id": "chatcmpl-ab10e548-1311-4f86-b84f-f5fb9e7a6773",
+    "object": "chat.completion",
+    "created": 1742954363,
+    "model": "Llama-3.2-3B-Instruct",
+    "choices": [
+        {
+            "index": 0,
+            "message": {
+                "content": "Paris, France is located in northern central France, roughly 450 km southeast of London.",
+                "role": "assistant"
+            },
+            "finish_reason": "stop",
+            "logprobs": null
+        }
+    ],
+    "usage": {
+        "prompt_tokens": 430,
+        "completion_tokens": 20,
+        "total_tokens": 450
+    }
+}
+```
 
 ## Command Line Usage
 

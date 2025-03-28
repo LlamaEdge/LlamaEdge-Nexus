@@ -96,8 +96,8 @@ jobs:
       - name: Build on macos
         if: startsWith(matrix.os, 'macos')
         env:
-          WASI_SDK_PATH: /Users/runner/work/llama-proxy-server/llama-proxy-server/wasi-sdk-24.0
-          CC: "/Users/runner/work/llama-proxy-server/llama-proxy-server/wasi-sdk-24.0/bin/clang --sysroot=/Users/runner/work/llama-proxy-server/llama-proxy-server/wasi-sdk-24.0/share/wasi-sysroot"
+          WASI_SDK_PATH: /Users/runner/work/LlamaEdge-Nexus/LlamaEdge-Nexus/wasi-sdk-24.0
+          CC: "/Users/runner/work/LlamaEdge-Nexus/LlamaEdge-Nexus/wasi-sdk-24.0/bin/clang --sysroot=/Users/runner/work/LlamaEdge-Nexus/LlamaEdge-Nexus/wasi-sdk-24.0/share/wasi-sysroot"
           RUSTFLAGS: "--cfg wasmedge --cfg tokio_unstable"
         run: |
           cargo build --release

@@ -1,11 +1,11 @@
 
 # test /v1/embeddings endpoint
-POST http://localhost:9069/v1/embeddings
+POST http://localhost:9068/v1/embeddings
 Accept: application/json
 Content-Type: application/json
 ```json
 {
-    "model": "Nomic-embed-text-v1.5",
+    "model": "nomic-embed-text-v1.5",
     "input": [
         "Gaianet is revolutionizing the AI landscape with a distributed AI infrastructure that seeks to decentralize the dominance of major players such as OpenAI, Google, and Anthropic. By leveraging a network of edge-computing nodes owned by individuals around the world, Gaianet enables hosting of both open-source and finely-tuned models. This infrastructure is designed to cater to diverse AI demands, offering a scalable alternative to traditional centralized servers.",
         "The inception of Gaianet is driven by the necessity to address key issues in the current AI industry: censorship and bias in AI outputs, lack of privacy for user data, and the high costs associated with accessing and developing on centralized AI models. These challenges have restricted the dissemination of unbiased information, compromised data security, and erected barriers to innovation and broader application of AI technologies.",
@@ -22,12 +22,12 @@ Content-Type: application/json
 ```
 HTTP 200
 [Asserts]
-jsonpath "$.model" == "Nomic-embed-text-v1.5"
+jsonpath "$.model" == "nomic-embed-text-v1.5"
 jsonpath "$.data" count > 0
 
 # test /v1/embeddings endpoint
 # Test purpose: The model name is incorrect
-POST http://localhost:9069/v1/embeddings
+POST http://localhost:9068/v1/embeddings
 Accept: application/json
 Content-Type: application/json
 ```json
@@ -49,5 +49,5 @@ Content-Type: application/json
 ```
 HTTP 200
 [Asserts]
-jsonpath "$.model" == "Nomic-embed-text-v1.5"
+jsonpath "$.model" == "nomic-embed-text-v1.5"
 jsonpath "$.data" count > 0

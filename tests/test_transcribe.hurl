@@ -1,5 +1,5 @@
 # test /v1/audio/transcriptions endpoint
-POST http://localhost:10011/v1/audio/transcriptions
+POST http://localhost:9068/v1/audio/transcriptions
 [MultipartFormData]
 file: file,test.wav;
 language: en

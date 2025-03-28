@@ -1,5 +1,5 @@
 # test /v1/audio/translations endpoint
-POST http://localhost:10011/v1/audio/translations
+POST http://localhost:9068/v1/audio/translations
 [MultipartFormData]
 file: file,test_cn.wav;
 language: zh

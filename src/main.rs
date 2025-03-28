@@ -36,7 +36,7 @@ use tower_http::{
     services::ServeDir,
     trace::TraceLayer,
 };
-use utils::LogLevel;
+use utils::init_logging;
 use uuid::Uuid;
 
 #[derive(Debug, Parser)]
@@ -56,39 +56,28 @@ struct Cli {
 #[allow(clippy::needless_return)]
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), ServerError> {
-    // get the environment variable `RUST_LOG`
-    let rust_log = std::env::var("RUST_LOG").unwrap_or_default().to_lowercase();
-    let (_, log_level) = match rust_log.is_empty() {
-        true => ("stdout", LogLevel::Info),
-        false => match rust_log.split_once("=") {
-            Some((target, level)) => (target, level.parse().unwrap_or(LogLevel::Info)),
-            None => ("stdout", rust_log.parse().unwrap_or(LogLevel::Info)),
-        },
-    };
-
-    // set global logger
-    wasi_logger::Logger::install().expect("failed to install wasi_logger::Logger");
-    log::set_max_level(log_level.into());
-
     // parse the command line arguments
     let cli = Cli::parse();
 
+    // Initialize logging based on destination
+    init_logging("stdout", None)?;
+
     // log the version of the server
-    info!(target: "stdout", "version: {}", env!("CARGO_PKG_VERSION"));
+    dual_info!("Version: {}", env!("CARGO_PKG_VERSION"));
 
     // Load the config based on the command
     let config = match Config::load(&cli.config) {
         Ok(mut config) => {
             if cli.rag {
                 config.rag.enable = true;
-                info!(target: "stdout", "RAG is enabled");
+                dual_info!("RAG is enabled");
             }
 
             config
         }
         Err(e) => {
             let err_msg = format!("Failed to load config: {}", e);
-            error!(target: "stdout", "{}", err_msg);
+            dual_error!("{}", err_msg);
             return Err(ServerError::FailedToLoadConfig(err_msg));
         }
     };
@@ -136,7 +125,7 @@ async fn main() -> Result<(), ServerError> {
         )
         .route(
             "/admin/servers",
-            post(handler::admin::list_downstream_servers_handler),
+            get(handler::admin::list_downstream_servers_handler),
         )
         .layer(cors)
         .layer(TraceLayer::new_for_http())
@@ -150,12 +139,12 @@ async fn main() -> Result<(), ServerError> {
                     .insert("x-request-id", HeaderValue::from_str(&request_id).unwrap());
 
                 // Log request start
-                info!(target: "stdout", "Request started - ID: {}", request_id);
+                dual_info!("Request started - ID: {}", request_id);
 
                 let response = next.run(req).await;
 
                 // Log request completion
-                info!(target: "stdout", "Request completed - ID: {}", request_id);
+                dual_info!("Request completed - ID: {}", request_id);
 
                 response
             },
@@ -170,7 +159,7 @@ async fn main() -> Result<(), ServerError> {
 
     // create a tcp listener
     let tcp_listener = TcpListener::bind(addr).await.unwrap();
-    info!(target: "stdout", "Listening on {}", addr);
+    dual_info!("Listening on {}", addr);
 
     // run
     match axum::Server::from_tcp(tcp_listener.into_std().unwrap())
@@ -283,7 +272,7 @@ impl AppState {
                 let kind = ServerKind::from_str(kind).unwrap();
                 if let Some(group) = group_map.get(&kind) {
                     group.unregister(server_id.as_ref()).await?;
-                    info!(target: "stdout", "Unregistered {} server: {}", &kind, server_id.as_ref());
+                    dual_info!("Unregistered {} server: {}", &kind, server_id.as_ref());
 
                     if !found {
                         found = true;

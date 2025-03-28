@@ -1,4 +1,5 @@
 use crate::{
+    dual_debug, dual_error, dual_info, dual_warn,
     error::{ServerError, ServerResult},
     info::ApiServer,
     rag,
@@ -40,7 +41,7 @@ pub async fn chat(
         .unwrap_or("unknown")
         .to_string();
 
-    info!(target: "stdout", "Received a new chat request - request_id: {}", request_id);
+    dual_info!("Received a new chat request - request_id: {}", request_id);
 
     // get the chat server
     let chat_server_base_url = {
@@ -65,7 +66,11 @@ pub async fn chat(
     };
 
     let chat_service_url = format!("{}v1/chat/completions", chat_server_base_url);
-    info!(target: "stdout", "Forward the chat request to {} - request_id: {}", chat_service_url, request_id);
+    dual_info!(
+        "Forward the chat request to {} - request_id: {}",
+        chat_service_url,
+        request_id
+    );
 
     let stream = request.stream;
 
@@ -102,7 +107,10 @@ pub async fn chat(
                 .body(Body::from(bytes))
             {
                 Ok(response) => {
-                    info!(target: "stdout", "Chat request completed successfully - request_id: {}", request_id);
+                    dual_info!(
+                        "Chat request completed successfully - request_id: {}",
+                        request_id
+                    );
                     Ok(response)
                 }
                 Err(e) => {
@@ -119,7 +127,10 @@ pub async fn chat(
                 .body(Body::from(bytes))
             {
                 Ok(response) => {
-                    info!(target: "stdout", "Chat request completed successfully - request_id: {}", request_id);
+                    dual_info!(
+                        "Chat request completed successfully - request_id: {}",
+                        request_id
+                    );
                     Ok(response)
                 }
                 Err(e) => {
@@ -144,7 +155,10 @@ pub async fn embeddings_handler(
         .unwrap_or("unknown")
         .to_string();
 
-    info!(target: "stdout", "Received a new embeddings request - request_id: {}", request_id);
+    dual_info!(
+        "Received a new embeddings request - request_id: {}",
+        request_id
+    );
 
     // get the embeddings server
     let servers = state.server_group.read().await;
@@ -166,7 +180,11 @@ pub async fn embeddings_handler(
         }
     };
     let embeddings_service_url = format!("{}v1/embeddings", embeddings_server_base_url);
-    info!(target: "stdout", "Forward the embeddings request to {} - request_id: {}", embeddings_service_url, request_id);
+    dual_info!(
+        "Forward the embeddings request to {} - request_id: {}",
+        embeddings_service_url,
+        request_id
+    );
 
     // parse the content-type header
     let content_type = headers
@@ -178,7 +196,11 @@ pub async fn embeddings_handler(
             ServerError::Operation(err_msg)
         })?;
     let content_type = content_type.to_string();
-    info!(target: "stdout", "Request content type: {} - request_id: {}", content_type, request_id);
+    dual_info!(
+        "Request content type: {} - request_id: {}",
+        content_type,
+        request_id
+    );
 
     // Create request client
     let ds_response = reqwest::Client::new()
@@ -192,7 +214,7 @@ pub async fn embeddings_handler(
                 "Failed to forward the request to the downstream server: {}",
                 e
             );
-            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+            dual_error!("{} - request_id: {}", err_msg, request_id);
             ServerError::Operation(err_msg)
         })?;
 
@@ -211,12 +233,15 @@ pub async fn embeddings_handler(
         .body(Body::from(bytes))
     {
         Ok(response) => {
-            info!(target: "stdout", "Embeddings request completed successfully - request_id: {}", request_id);
+            dual_info!(
+                "Embeddings request completed successfully - request_id: {}",
+                request_id
+            );
             Ok(response)
         }
         Err(e) => {
             let err_msg = format!("Failed to create the response: {}", e);
-            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+            dual_error!("{} - request_id: {}", err_msg, request_id);
             Err(ServerError::Operation(err_msg))
         }
     }
@@ -234,7 +259,10 @@ pub(crate) async fn audio_transcriptions_handler(
         .unwrap_or("unknown")
         .to_string();
 
-    info!(target: "stdout", "Received a new audio transcription request - request_id: {}", request_id);
+    dual_info!(
+        "Received a new audio transcription request - request_id: {}",
+        request_id
+    );
 
     // get the transcribe server
     let transcribe_server_base_url = {
@@ -243,7 +271,7 @@ pub(crate) async fn audio_transcriptions_handler(
             Some(servers) => servers,
             None => {
                 let err_msg = "No transcribe server available";
-                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                dual_error!("{} - request_id: {}", err_msg, request_id);
                 return Err(ServerError::Operation(err_msg.to_string()));
             }
         };
@@ -252,7 +280,7 @@ pub(crate) async fn audio_transcriptions_handler(
             Ok(url) => url,
             Err(e) => {
                 let err_msg = format!("Failed to get the transcribe server: {}", e);
-                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                dual_error!("{} - request_id: {}", err_msg, request_id);
                 return Err(ServerError::Operation(err_msg));
             }
         }
@@ -260,7 +288,11 @@ pub(crate) async fn audio_transcriptions_handler(
 
     let transcription_service_url =
         format!("{}v1/audio/transcriptions", transcribe_server_base_url);
-    info!(target: "stdout", "Forward the audio transcription request to {} - request_id: {}", transcription_service_url, request_id);
+    dual_info!(
+        "Forward the audio transcription request to {} - request_id: {}",
+        transcription_service_url,
+        request_id
+    );
 
     // Create request client
     let mut request_builder = reqwest::Client::new().post(transcription_service_url);
@@ -271,7 +303,7 @@ pub(crate) async fn audio_transcriptions_handler(
     // convert the request body into bytes
     let body_bytes = hyper::body::to_bytes(req.into_body()).await.map_err(|e| {
         let err_msg = format!("Failed to convert the request body into bytes: {}", e);
-        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        dual_error!("{} - request_id: {}", err_msg, request_id);
         ServerError::Operation(err_msg)
     })?;
 
@@ -280,7 +312,7 @@ pub(crate) async fn audio_transcriptions_handler(
             "Failed to forward the request to the downstream server: {}",
             e
         );
-        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        dual_error!("{} - request_id: {}", err_msg, request_id);
         ServerError::Operation(err_msg)
     })?;
 
@@ -289,7 +321,7 @@ pub(crate) async fn audio_transcriptions_handler(
     // Handle response body reading with cancellation
     let bytes = ds_response.bytes().await.map_err(|e| {
         let err_msg = format!("Failed to get the full response as bytes: {}", e);
-        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        dual_error!("{} - request_id: {}", err_msg, request_id);
         ServerError::Operation(err_msg)
     })?;
 
@@ -299,12 +331,15 @@ pub(crate) async fn audio_transcriptions_handler(
         .body(Body::from(bytes))
     {
         Ok(response) => {
-            info!(target: "stdout", "Audio transcription request completed successfully - request_id: {}", request_id);
+            dual_info!(
+                "Audio transcription request completed successfully - request_id: {}",
+                request_id
+            );
             Ok(response)
         }
         Err(e) => {
             let err_msg = format!("Failed to create the response: {}", e);
-            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+            dual_error!("{} - request_id: {}", err_msg, request_id);
             Err(ServerError::Operation(err_msg))
         }
     }
@@ -322,7 +357,10 @@ pub(crate) async fn audio_translations_handler(
         .unwrap_or("unknown")
         .to_string();
 
-    info!(target: "stdout", "Received a new audio translation request - request_id: {}", request_id);
+    dual_info!(
+        "Received a new audio translation request - request_id: {}",
+        request_id
+    );
 
     // get the transcribe server
     let translate_server_base_url = {
@@ -331,7 +369,7 @@ pub(crate) async fn audio_translations_handler(
             Some(servers) => servers,
             None => {
                 let err_msg = "No translate server available";
-                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                dual_error!("{} - request_id: {}", err_msg, request_id);
                 return Err(ServerError::Operation(err_msg.to_string()));
             }
         };
@@ -340,14 +378,18 @@ pub(crate) async fn audio_translations_handler(
             Ok(url) => url,
             Err(e) => {
                 let err_msg = format!("Failed to get the translate server: {}", e);
-                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                dual_error!("{} - request_id: {}", err_msg, request_id);
                 return Err(ServerError::Operation(err_msg));
             }
         }
     };
 
     let translation_service_url = format!("{}v1/audio/translations", translate_server_base_url);
-    info!(target: "stdout", "Forward the audio translation request to {} - request_id: {}", translation_service_url, request_id);
+    dual_info!(
+        "Forward the audio translation request to {} - request_id: {}",
+        translation_service_url,
+        request_id
+    );
 
     // Create request client
     let mut request_builder = reqwest::Client::new().post(translation_service_url);
@@ -358,7 +400,7 @@ pub(crate) async fn audio_translations_handler(
     // convert the request body into bytes
     let body_bytes = hyper::body::to_bytes(req.into_body()).await.map_err(|e| {
         let err_msg = format!("Failed to convert the request body into bytes: {}", e);
-        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        dual_error!("{} - request_id: {}", err_msg, request_id);
         ServerError::Operation(err_msg)
     })?;
 
@@ -367,7 +409,7 @@ pub(crate) async fn audio_translations_handler(
             "Failed to forward the request to the downstream server: {}",
             e
         );
-        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        dual_error!("{} - request_id: {}", err_msg, request_id);
         ServerError::Operation(err_msg)
     })?;
 
@@ -376,7 +418,7 @@ pub(crate) async fn audio_translations_handler(
     // Handle response body reading with cancellation
     let bytes = ds_response.bytes().await.map_err(|e| {
         let err_msg = format!("Failed to get the full response as bytes: {}", e);
-        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        dual_error!("{} - request_id: {}", err_msg, request_id);
         ServerError::Operation(err_msg)
     })?;
 
@@ -386,12 +428,15 @@ pub(crate) async fn audio_translations_handler(
         .body(Body::from(bytes))
     {
         Ok(response) => {
-            info!(target: "stdout", "Audio translation request completed successfully - request_id: {}", request_id);
+            dual_info!(
+                "Audio translation request completed successfully - request_id: {}",
+                request_id
+            );
             Ok(response)
         }
         Err(e) => {
             let err_msg = format!("Failed to create the response: {}", e);
-            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+            dual_error!("{} - request_id: {}", err_msg, request_id);
             Err(ServerError::Operation(err_msg))
         }
     }
@@ -409,7 +454,10 @@ pub(crate) async fn audio_tts_handler(
         .unwrap_or("unknown")
         .to_string();
 
-    info!(target: "stdout", "Received a new audio speech request - request_id: {}", request_id);
+    dual_info!(
+        "Received a new audio speech request - request_id: {}",
+        request_id
+    );
 
     // get the tts server
     let tts_server_base_url = {
@@ -418,7 +466,7 @@ pub(crate) async fn audio_tts_handler(
             Some(servers) => servers,
             None => {
                 let err_msg = "No tts server available";
-                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                dual_error!("{} - request_id: {}", err_msg, request_id);
                 return Err(ServerError::Operation(err_msg.to_string()));
             }
         };
@@ -427,14 +475,18 @@ pub(crate) async fn audio_tts_handler(
             Ok(url) => url,
             Err(e) => {
                 let err_msg = format!("Failed to get the tts server: {}", e);
-                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                dual_error!("{} - request_id: {}", err_msg, request_id);
                 return Err(ServerError::Operation(err_msg));
             }
         }
     };
 
     let tts_service_url = format!("{}v1/audio/speech", tts_server_base_url);
-    info!(target: "stdout", "Forward the audio speech request to {} - request_id: {}", tts_service_url, request_id);
+    dual_info!(
+        "Forward the audio speech request to {} - request_id: {}",
+        tts_service_url,
+        request_id
+    );
 
     // Create request client
     let mut request_builder = reqwest::Client::new().post(tts_service_url);
@@ -444,7 +496,7 @@ pub(crate) async fn audio_tts_handler(
 
     let body_bytes = hyper::body::to_bytes(req.into_body()).await.map_err(|e| {
         let err_msg = format!("Failed to convert the request body into bytes: {}", e);
-        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        dual_error!("{} - request_id: {}", err_msg, request_id);
         ServerError::Operation(err_msg)
     })?;
 
@@ -453,7 +505,7 @@ pub(crate) async fn audio_tts_handler(
             "Failed to forward the request to the downstream server: {}",
             e
         );
-        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        dual_error!("{} - request_id: {}", err_msg, request_id);
         ServerError::Operation(err_msg)
     })?;
 
@@ -466,18 +518,21 @@ pub(crate) async fn audio_tts_handler(
     // Handle response body reading with cancellation
     let bytes = ds_response.bytes().await.map_err(|e| {
         let err_msg = format!("Failed to get the full response as bytes: {}", e);
-        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        dual_error!("{} - request_id: {}", err_msg, request_id);
         ServerError::Operation(err_msg)
     })?;
 
     match response_builder.body(Body::from(bytes)) {
         Ok(response) => {
-            info!(target: "stdout", "Audio speech request completed successfully - request_id: {}", request_id);
+            dual_info!(
+                "Audio speech request completed successfully - request_id: {}",
+                request_id
+            );
             Ok(response)
         }
         Err(e) => {
             let err_msg = format!("Failed to create the response: {}", e);
-            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+            dual_error!("{} - request_id: {}", err_msg, request_id);
             Err(ServerError::Operation(err_msg))
         }
     }
@@ -495,7 +550,7 @@ pub(crate) async fn image_handler(
         .unwrap_or("unknown")
         .to_string();
 
-    info!(target: "stdout", "Received a new image request - request_id: {}", request_id);
+    dual_info!("Received a new image request - request_id: {}", request_id);
 
     // get the image server
     let image_server_base_url = {
@@ -504,7 +559,7 @@ pub(crate) async fn image_handler(
             Some(servers) => servers,
             None => {
                 let err_msg = "No image server available";
-                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                dual_error!("{} - request_id: {}", err_msg, request_id);
                 return Err(ServerError::Operation(err_msg.to_string()));
             }
         };
@@ -513,14 +568,18 @@ pub(crate) async fn image_handler(
             Ok(url) => url,
             Err(e) => {
                 let err_msg = format!("Failed to get the image server: {}", e);
-                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                dual_error!("{} - request_id: {}", err_msg, request_id);
                 return Err(ServerError::Operation(err_msg));
             }
         }
     };
 
     let image_service_url = format!("{}v1/images/generations", image_server_base_url);
-    info!(target: "stdout", "Forward the image request to {} - request_id: {}", image_service_url, request_id);
+    dual_info!(
+        "Forward the image request to {} - request_id: {}",
+        image_service_url,
+        request_id
+    );
 
     // Create request client
     let mut request_builder = reqwest::Client::new().post(image_service_url);
@@ -531,7 +590,7 @@ pub(crate) async fn image_handler(
     // convert the request body into bytes
     let body_bytes = hyper::body::to_bytes(req.into_body()).await.map_err(|e| {
         let err_msg = format!("Failed to convert the request body into bytes: {}", e);
-        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        dual_error!("{} - request_id: {}", err_msg, request_id);
         ServerError::Operation(err_msg)
     })?;
 
@@ -540,7 +599,7 @@ pub(crate) async fn image_handler(
             "Failed to forward the request to the downstream server: {}",
             e
         );
-        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        dual_error!("{} - request_id: {}", err_msg, request_id);
         ServerError::Operation(err_msg)
     })?;
 
@@ -553,18 +612,21 @@ pub(crate) async fn image_handler(
     // Handle response body reading with cancellation
     let bytes = ds_response.bytes().await.map_err(|e| {
         let err_msg = format!("Failed to get the full response as bytes: {}", e);
-        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        dual_error!("{} - request_id: {}", err_msg, request_id);
         ServerError::Operation(err_msg)
     })?;
 
     match response_builder.body(Body::from(bytes)) {
         Ok(response) => {
-            info!(target: "stdout", "Image request completed successfully - request_id: {}", request_id);
+            dual_info!(
+                "Image request completed successfully - request_id: {}",
+                request_id
+            );
             Ok(response)
         }
         Err(e) => {
             let err_msg = format!("Failed to create the response: {}", e);
-            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+            dual_error!("{} - request_id: {}", err_msg, request_id);
             Err(ServerError::Operation(err_msg))
         }
     }
@@ -581,7 +643,10 @@ pub(crate) async fn create_rag_handler(
         .unwrap_or("unknown")
         .to_string();
 
-    info!(target: "stdout", "Received a new create RAG request - request_id: {}", request_id);
+    dual_info!(
+        "Received a new create RAG request - request_id: {}",
+        request_id
+    );
 
     // process the multipart form data
     let mut contents = String::new();
@@ -592,7 +657,7 @@ pub(crate) async fn create_rag_handler(
     let mut chunk_capacity = 100;
     while let Some(mut field) = multipart.next_field().await.map_err(|e| {
         let err_msg = format!("Failed to get next field: {}", e);
-        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        dual_error!("{} - request_id: {}", err_msg, request_id);
         ServerError::Operation(err_msg)
     })? {
         match field.name() {
@@ -609,7 +674,7 @@ pub(crate) async fn create_rag_handler(
                         }
                         _ => {
                             let err_msg = "The file should be a plain text or markdown file";
-                            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                            dual_error!("{} - request_id: {}", err_msg, request_id);
                             return Err(ServerError::Operation(err_msg.to_string()));
                         }
                     }
@@ -618,13 +683,13 @@ pub(crate) async fn create_rag_handler(
                 // get the file contents
                 while let Some(chunk) = field.chunk().await.map_err(|e| {
                     let err_msg = format!("Failed to get the next chunk: {}", e);
-                    error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                    dual_error!("{} - request_id: {}", err_msg, request_id);
                     ServerError::Operation(err_msg)
                 })? {
                     let chunk_data = String::from_utf8(chunk.to_vec()).map_err(|e| {
                         let err_msg =
                             format!("Failed to convert the chunk data to a string: {}", e);
-                        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                        dual_error!("{} - request_id: {}", err_msg, request_id);
                         ServerError::Operation(err_msg)
                     })?;
 
@@ -634,86 +699,120 @@ pub(crate) async fn create_rag_handler(
             Some("chunk_capacity") => {
                 // Get content type if available
                 if let Some(content_type) = field.content_type() {
-                    info!(target: "stdout", "Content type: {} - request_id: {}", content_type, request_id);
+                    dual_info!(
+                        "Content type: {} - request_id: {}",
+                        content_type,
+                        request_id
+                    );
                 }
 
                 // Get the field data as a string
                 let capacity = field.text().await.map_err(|e| {
                     let err_msg = format!("`chunk_capacity` field should be a text field. {}", e);
-                    error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                    dual_error!("{} - request_id: {}", err_msg, request_id);
                     ServerError::Operation(err_msg)
                 })?;
 
                 chunk_capacity = capacity.parse().map_err(|e| {
                     let err_msg = format!("Failed to convert the chunk capacity to a usize: {}", e);
-                    error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                    dual_error!("{} - request_id: {}", err_msg, request_id);
                     ServerError::Operation(err_msg)
                 })?;
 
-                debug!(target: "stdout", "Got chunk capacity: {} - request_id: {}", chunk_capacity, request_id);
+                dual_debug!(
+                    "Got chunk capacity: {} - request_id: {}",
+                    chunk_capacity,
+                    request_id
+                );
             }
             Some("vdb_server_url") => {
                 // Get content type if available
                 if let Some(content_type) = field.content_type() {
-                    info!(target: "stdout", "Content type: {} - request_id: {}", content_type, request_id);
+                    dual_info!(
+                        "Content type: {} - request_id: {}",
+                        content_type,
+                        request_id
+                    );
                 }
 
                 // Get the field data as a string
                 vdb_server_url = field.text().await.map_err(|e| {
                     let err_msg = format!("`vdb_server_url` field should be a text field. {}", e);
-                    error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                    dual_error!("{} - request_id: {}", err_msg, request_id);
                     ServerError::Operation(err_msg)
                 })?;
 
-                debug!(target: "stdout", "Got VectorDB server URL: {} - request_id: {}", vdb_server_url, request_id);
+                dual_debug!(
+                    "Got VectorDB server URL: {} - request_id: {}",
+                    vdb_server_url,
+                    request_id
+                );
             }
             Some("vdb_collection_name") => {
                 // Get content type if available
                 if let Some(content_type) = field.content_type() {
-                    info!(target: "stdout", "Content type: {} - request_id: {}", content_type, request_id);
+                    dual_info!(
+                        "Content type: {} - request_id: {}",
+                        content_type,
+                        request_id
+                    );
                 }
 
                 // Get the field data as a string
                 vdb_collection_name = field.text().await.map_err(|e| {
                     let err_msg =
                         format!("`vdb_collection_name` field should be a text field. {}", e);
-                    error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                    dual_error!("{} - request_id: {}", err_msg, request_id);
                     ServerError::Operation(err_msg)
                 })?;
 
-                debug!(target: "stdout", "Got VectorDB collection name: {} - request_id: {}", vdb_collection_name, request_id);
+                dual_debug!(
+                    "Got VectorDB collection name: {} - request_id: {}",
+                    vdb_collection_name,
+                    request_id
+                );
             }
             Some("vdb_api_key") => {
                 // Get content type if available
                 if let Some(content_type) = field.content_type() {
-                    info!(target: "stdout", "Content type: {} - request_id: {}", content_type, request_id);
+                    dual_info!(
+                        "Content type: {} - request_id: {}",
+                        content_type,
+                        request_id
+                    );
                 }
 
                 // Get the field data as a string
                 vdb_api_key = field.text().await.map_err(|e| {
                     let err_msg = format!("`vdb_api_key` field should be a text field. {}", e);
-                    error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                    dual_error!("{} - request_id: {}", err_msg, request_id);
                     ServerError::Operation(err_msg)
                 })?;
             }
             Some(field_name) => {
                 let warn_msg = format!("Unknown field: {}", field_name);
-                warn!(target: "stdout", "{} - request_id: {}", warn_msg, request_id);
+                dual_warn!("{} - request_id: {}", warn_msg, request_id);
             }
             None => {
                 let err_msg = "No field name found";
-                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                dual_error!("{} - request_id: {}", err_msg, request_id);
                 return Err(ServerError::Operation(err_msg.to_string()));
             }
         }
     }
 
     // segment the contents into chunks
-    info!(target: "stdout", "Segment the contents into chunks - request_id: {}", request_id);
+    dual_info!(
+        "Segment the contents into chunks - request_id: {}",
+        request_id
+    );
     let chunks = rag::chunk_text(&contents, extension, chunk_capacity, &request_id)?;
 
     // compute the embeddings for each chunk
-    info!(target: "stdout", "Compute embeddings for document chunks - request_id: {}", request_id);
+    dual_info!(
+        "Compute embeddings for document chunks - request_id: {}",
+        request_id
+    );
     let embedding_response = {
         let embedding_request = EmbeddingRequest {
             model: None,
@@ -731,7 +830,7 @@ pub(crate) async fn create_rag_handler(
             Some(servers) => servers,
             None => {
                 let err_msg = "No embeddings server available";
-                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                dual_error!("{} - request_id: {}", err_msg, request_id);
                 return Err(ServerError::Operation(err_msg.to_string()));
             }
         };
@@ -740,12 +839,16 @@ pub(crate) async fn create_rag_handler(
             Ok(url) => url,
             Err(e) => {
                 let err_msg = format!("Failed to get the embeddings server: {}", e);
-                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                dual_error!("{} - request_id: {}", err_msg, request_id);
                 return Err(ServerError::Operation(err_msg));
             }
         };
         let embeddings_service_url = format!("{}v1/embeddings", embeddings_server_base_url);
-        info!(target: "stdout", "Forward the embeddings request to {} - request_id: {}", embeddings_service_url, request_id);
+        dual_info!(
+            "Forward the embeddings request to {} - request_id: {}",
+            embeddings_service_url,
+            request_id
+        );
 
         // parse the content-type header
         let content_type = headers
@@ -753,11 +856,15 @@ pub(crate) async fn create_rag_handler(
             .and_then(|v| v.to_str().ok())
             .ok_or_else(|| {
                 let err_msg = "Missing Content-Type header".to_string();
-                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                dual_error!("{} - request_id: {}", err_msg, request_id);
                 ServerError::Operation(err_msg)
             })?;
         let content_type = content_type.to_string();
-        debug!(target: "stdout", "Request content type: {} - request_id: {}", content_type, request_id);
+        dual_debug!(
+            "Request content type: {} - request_id: {}",
+            content_type,
+            request_id
+        );
 
         // Create request client
         let client = reqwest::Client::new();
@@ -769,7 +876,7 @@ pub(crate) async fn create_rag_handler(
             .await
             .map_err(|e| {
                 let err_msg = format!("Failed to create the request: {}", e);
-                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                dual_error!("{} - request_id: {}", err_msg, request_id);
                 ServerError::Operation(err_msg)
             })?;
 
@@ -778,13 +885,17 @@ pub(crate) async fn create_rag_handler(
             .await
             .map_err(|e| {
                 let err_msg = format!("Failed to parse the embedding response: {}", e);
-                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                dual_error!("{} - request_id: {}", err_msg, request_id);
                 ServerError::Operation(err_msg)
             })?
     };
     let embeddings = embedding_response.data;
 
-    info!(target: "stdout", "Got {} embeddings - request_id: {}", embeddings.len(), request_id);
+    dual_info!(
+        "Got {} embeddings - request_id: {}",
+        embeddings.len(),
+        request_id
+    );
 
     // create a Qdrant client
     let mut qdrant_client = qdrant::Qdrant::new_with_url(vdb_server_url);
@@ -817,7 +928,7 @@ pub(crate) async fn create_rag_handler(
         .body(Body::from(json_body.to_string()))
         .map_err(|e| {
             let err_msg = format!("Failed to create response: {}", e);
-            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+            dual_error!("{} - request_id: {}", err_msg, request_id);
             ServerError::Operation(err_msg)
         })
 }
@@ -833,7 +944,7 @@ pub(crate) async fn chunks_handler(
         .unwrap_or("unknown")
         .to_string();
 
-    info!(target: "stdout", "Received a new chunks request - request_id: {}", request_id);
+    dual_info!("Received a new chunks request - request_id: {}", request_id);
 
     // Process multipart form data
     let mut contents = String::new();
@@ -841,7 +952,7 @@ pub(crate) async fn chunks_handler(
     let mut chunk_capacity: usize = 0;
     while let Some(mut field) = multipart.next_field().await.map_err(|e| {
         let err_msg = format!("Failed to get next field: {}", e);
-        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        dual_error!("{} - request_id: {}", err_msg, request_id);
         ServerError::Operation(err_msg)
     })? {
         match field.name() {
@@ -858,7 +969,7 @@ pub(crate) async fn chunks_handler(
                         }
                         _ => {
                             let err_msg = "The file should be a plain text or markdown file";
-                            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                            dual_error!("{} - request_id: {}", err_msg, request_id);
                             return Err(ServerError::Operation(err_msg.to_string()));
                         }
                     }
@@ -867,13 +978,13 @@ pub(crate) async fn chunks_handler(
                 // get the file contents
                 while let Some(chunk) = field.chunk().await.map_err(|e| {
                     let err_msg = format!("Failed to get the next chunk: {}", e);
-                    error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                    dual_error!("{} - request_id: {}", err_msg, request_id);
                     ServerError::Operation(err_msg)
                 })? {
                     let chunk_data = String::from_utf8(chunk.to_vec()).map_err(|e| {
                         let err_msg =
                             format!("Failed to convert the chunk data to a string: {}", e);
-                        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                        dual_error!("{} - request_id: {}", err_msg, request_id);
                         ServerError::Operation(err_msg)
                     })?;
 
@@ -883,38 +994,49 @@ pub(crate) async fn chunks_handler(
             Some("chunk_capacity") => {
                 // Get content type if available
                 if let Some(content_type) = field.content_type() {
-                    info!(target: "stdout", "Content type: {} - request_id: {}", content_type, request_id);
+                    dual_info!(
+                        "Content type: {} - request_id: {}",
+                        content_type,
+                        request_id
+                    );
                 }
 
                 // Get the field data as a string
                 let capacity = field.text().await.map_err(|e| {
                     let err_msg = format!("`chunk_capacity` field should be a text field. {}", e);
-                    error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                    dual_error!("{} - request_id: {}", err_msg, request_id);
                     ServerError::Operation(err_msg)
                 })?;
 
                 chunk_capacity = capacity.parse().map_err(|e| {
                     let err_msg = format!("Failed to convert the chunk capacity to a usize: {}", e);
-                    error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                    dual_error!("{} - request_id: {}", err_msg, request_id);
                     ServerError::Operation(err_msg)
                 })?;
 
-                debug!(target: "stdout", "Got chunk capacity: {} - request_id: {}", chunk_capacity, request_id);
+                dual_debug!(
+                    "Got chunk capacity: {} - request_id: {}",
+                    chunk_capacity,
+                    request_id
+                );
             }
             Some(field_name) => {
                 let warn_msg = format!("Unknown field: {}", field_name);
-                warn!(target: "stdout", "{} - request_id: {}", warn_msg, request_id);
+                dual_warn!("{} - request_id: {}", warn_msg, request_id);
             }
             None => {
                 let err_msg = "No field name found";
-                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                dual_error!("{} - request_id: {}", err_msg, request_id);
                 return Err(ServerError::Operation(err_msg.to_string()));
             }
         }
     }
 
     // segment the contents into chunks
-    info!(target: "stdout", "Segment the contents into chunks - request_id: {}", request_id);
+    dual_info!(
+        "Segment the contents into chunks - request_id: {}",
+        request_id
+    );
     let chunks = rag::chunk_text(&contents, extension, chunk_capacity, &request_id)?;
 
     let json_body = serde_json::json!({
@@ -922,7 +1044,7 @@ pub(crate) async fn chunks_handler(
     });
     let data = serde_json::to_string(&json_body).map_err(|e| {
         let err_msg = format!("Failed to serialize chunks response: {}", e);
-        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        dual_error!("{} - request_id: {}", err_msg, request_id);
         ServerError::Operation(err_msg)
     })?;
 
@@ -932,7 +1054,7 @@ pub(crate) async fn chunks_handler(
         .body(Body::from(data))
         .map_err(|e| {
             let err_msg = format!("Failed to create response: {}", e);
-            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+            dual_error!("{} - request_id: {}", err_msg, request_id);
             ServerError::Operation(err_msg)
         })
 }
@@ -955,7 +1077,7 @@ pub(crate) async fn models_handler(
 
     let json_body = serde_json::to_string(&list_response).map_err(|e| {
         let err_msg = format!("Failed to serialize the models: {}", e);
-        error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+        dual_error!("{} - request_id: {}", err_msg, request_id);
         ServerError::Operation(err_msg)
     })?;
 
@@ -965,7 +1087,7 @@ pub(crate) async fn models_handler(
         .body(Body::from(json_body))
         .map_err(|e| {
             let err_msg = format!("Failed to create response: {}", e);
-            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+            dual_error!("{} - request_id: {}", err_msg, request_id);
             ServerError::Operation(err_msg)
         })
 }
@@ -1025,7 +1147,7 @@ pub(crate) async fn info_handler(
         .body(Body::from(json_body.to_string()))
         .map_err(|e| {
             let err_msg = format!("Failed to create response: {}", e);
-            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+            dual_error!("{} - request_id: {}", err_msg, request_id);
             ServerError::Operation(err_msg)
         })
 }
@@ -1069,9 +1191,10 @@ pub mod admin {
 
         // register the server
         state.register_downstream_server(server).await?;
-        info!(
+        dual_info!(
             "Registered successfully. Assigned Server Id: {} - request_id: {}",
-            server_id, request_id
+            server_id,
+            request_id
         );
 
         // create a response with status code 200. Content-Type is JSON
@@ -1087,7 +1210,7 @@ pub mod admin {
             .body(axum::body::Body::from(json_body.to_string()))
             .map_err(|e| {
                 let err_msg = format!("Failed to create response: {}", e);
-                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                dual_error!("{} - request_id: {}", err_msg, request_id);
                 ServerError::Operation(err_msg)
             })?;
 
@@ -1114,7 +1237,7 @@ pub mod admin {
                 "Failed to verify the {} downstream server: {}",
                 server_kind, e
             );
-            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+            dual_error!("{} - request_id: {}", err_msg, request_id);
             ServerError::Operation(err_msg)
         })?;
 
@@ -1124,52 +1247,52 @@ pub mod admin {
                 server_kind,
                 response.status()
             );
-            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+            dual_error!("{} - request_id: {}", err_msg, request_id);
             return Err(ServerError::Operation(err_msg));
         }
 
         let mut api_server = response.json::<ApiServer>().await.map_err(|e| {
             let err_msg = format!("Failed to parse the server info: {}", e);
-            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+            dual_error!("{} - request_id: {}", err_msg, request_id);
             ServerError::Operation(err_msg)
         })?;
         api_server.server_id = Some(server_id.to_string());
 
-        info!(target: "stdout", "server kind: {}", server_kind.to_string());
-        info!(target: "stdout", "api server: {:?}", api_server);
+        dual_info!("server kind: {}", server_kind.to_string());
+        dual_info!("api server: {:?}", api_server);
 
         // verify the server kind
         {
             if server_kind.contains(ServerKind::chat) && api_server.chat_model.is_none() {
                 let err_msg = "You are trying to register a chat server. However, the server does not support `chat`. Please check the server kind.";
-                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                dual_error!("{} - request_id: {}", err_msg, request_id);
                 return Err(ServerError::Operation(err_msg.to_string()));
             }
             if server_kind.contains(ServerKind::embeddings) && api_server.embedding_model.is_none()
             {
                 let err_msg = "You are trying to register an embedding server. However, the server does not support `embeddings`. Please check the server kind.";
-                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                dual_error!("{} - request_id: {}", err_msg, request_id);
                 return Err(ServerError::Operation(err_msg.to_string()));
             }
             if server_kind.contains(ServerKind::image) && api_server.image_model.is_none() {
                 let err_msg = "You are trying to register an image server. However, the server does not support `image`. Please check the server kind.";
-                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                dual_error!("{} - request_id: {}", err_msg, request_id);
                 return Err(ServerError::Operation(err_msg.to_string()));
             }
             if server_kind.contains(ServerKind::tts) && api_server.tts_model.is_none() {
                 let err_msg = "You are trying to register a TTS server. However, the server does not support `tts`. Please check the server kind.";
-                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                dual_error!("{} - request_id: {}", err_msg, request_id);
                 return Err(ServerError::Operation(err_msg.to_string()));
             }
             if server_kind.contains(ServerKind::translate) && api_server.translate_model.is_none() {
                 let err_msg = "You are trying to register a translation server. However, the server does not support `translate`. Please check the server kind.";
-                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                dual_error!("{} - request_id: {}", err_msg, request_id);
                 return Err(ServerError::Operation(err_msg.to_string()));
             }
             if server_kind.contains(ServerKind::transcribe) && api_server.transcribe_model.is_none()
             {
                 let err_msg = "You are trying to register a transcription server. However, the server does not support `transcribe`. Please check the server kind.";
-                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                dual_error!("{} - request_id: {}", err_msg, request_id);
                 return Err(ServerError::Operation(err_msg.to_string()));
             }
         }
@@ -1184,7 +1307,7 @@ pub mod admin {
         let list_models_url = format!("{}/v1/models", server_url);
         let list_models_response = client.get(&list_models_url).send().await.map_err(|e| {
             let err_msg = format!("Failed to get the models from the downstream server: {}", e);
-            error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+            dual_error!("{} - request_id: {}", err_msg, request_id);
             ServerError::Operation(err_msg)
         })?;
 
@@ -1193,7 +1316,7 @@ pub mod admin {
             .await
             .map_err(|e| {
                 let err_msg = format!("Failed to parse the models: {}", e);
-                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                dual_error!("{} - request_id: {}", err_msg, request_id);
                 ServerError::Operation(err_msg)
             })?;
 
@@ -1232,7 +1355,7 @@ pub mod admin {
             .body(Body::from(json_body.to_string()))
             .map_err(|e| {
                 let err_msg = format!("Failed to create response: {}", e);
-                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                dual_error!("{} - request_id: {}", err_msg, request_id);
                 ServerError::Operation(err_msg)
             })?;
 
@@ -1243,6 +1366,8 @@ pub mod admin {
         State(state): State<Arc<AppState>>,
         headers: HeaderMap,
     ) -> ServerResult<Response<Body>> {
+        dual_debug!("list_downstream_servers_handler");
+
         // Get request ID from headers
         let request_id = headers
             .get("x-request-id")
@@ -1254,7 +1379,11 @@ pub mod admin {
 
         // compute the total number of servers
         let total_servers = servers.values().fold(0, |acc, servers| acc + servers.len());
-        info!(target: "stdout", "Found {} downstream servers - request_id: {}", total_servers, request_id);
+        dual_info!(
+            "Found {} downstream servers - request_id: {}",
+            total_servers,
+            request_id
+        );
 
         let json_body = serde_json::to_string(&servers).unwrap();
 
@@ -1264,7 +1393,7 @@ pub mod admin {
             .body(Body::from(json_body))
             .map_err(|e| {
                 let err_msg = format!("Failed to create response: {}", e);
-                error!(target: "stdout", "{} - request_id: {}", err_msg, request_id);
+                dual_error!("{} - request_id: {}", err_msg, request_id);
                 ServerError::Operation(err_msg)
             })?;
 

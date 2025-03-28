@@ -17,6 +17,7 @@ endpoints = { version = "0.25.1", features = [
     "rag",
 ], git = "https://github.com/LlamaEdge/LlamaEdge.git", branch = "refactor-update-serverinfo" }
 futures-util = "0.3"
+http = "0.2"
 hyper = { version = "0.14", features = ["full"] }
 log = { version = "0.4.21", features = ["std", "kv", "kv_serde"] }
 qdrant = { package = "qdrant_rest_client", version = "0.2.1" }
@@ -27,7 +28,7 @@ text-splitter = { version = "^0.24", features = ["tiktoken-rs", "markdown"] }
 thiserror = "1"
 tokio = { version = "1", features = ["rt", "macros", "net", "time", "io-util"] }
 tokio-util = "0.7.13"
-tower-http = { version = "0.4", features = ["fs"] }
+tower-http = { version = "0.4", features = ["fs", "trace", "cors"] }
 uuid = { version = "1.7.0", features = ["v4"] }
 wasi-logger = { version = "0.1.2", features = ["kv"] }
 

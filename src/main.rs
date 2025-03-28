@@ -11,6 +11,9 @@ mod utils;
 
 use anyhow::Result;
 use axum::{
+    body::Body,
+    http::{self, HeaderValue, Request},
+    middleware,
     routing::{get, post},
     Router,
 };
@@ -28,8 +31,13 @@ use std::{
     sync::Arc,
 };
 use tokio::{net::TcpListener, sync::RwLock};
-use tower_http::services::ServeDir;
+use tower_http::{
+    cors::{Any, CorsLayer},
+    services::ServeDir,
+    trace::TraceLayer,
+};
 use utils::LogLevel;
+use uuid::Uuid;
 
 #[derive(Debug, Parser)]
 #[command(version = env!("CARGO_PKG_VERSION"), about = "LlamaEdge Nexus - A gateway service for LLM backends")]
@@ -93,6 +101,12 @@ async fn main() -> Result<(), ServerError> {
 
     let app_state = Arc::new(AppState::new(config, ServerInfo::default()));
 
+    // Set up CORS
+    let cors = CorsLayer::new()
+        .allow_methods([http::Method::GET, http::Method::POST])
+        .allow_headers(Any)
+        .allow_origin(Any);
+
     let app = Router::new()
         .route("/v1/chat/completions", post(handler::chat_handler))
         // .route("/v1/completions", post(chat_handler))
@@ -124,6 +138,28 @@ async fn main() -> Result<(), ServerError> {
             "/admin/servers",
             post(handler::admin::list_downstream_servers_handler),
         )
+        .layer(cors)
+        .layer(TraceLayer::new_for_http())
+        .layer(middleware::from_fn(
+            |mut req: Request<Body>, next: middleware::Next<Body>| async move {
+                // Generate request ID
+                let request_id = Uuid::new_v4().to_string();
+
+                // Add request ID to headers
+                req.headers_mut()
+                    .insert("x-request-id", HeaderValue::from_str(&request_id).unwrap());
+
+                // Log request start
+                info!(target: "stdout", "Request started - ID: {}", request_id);
+
+                let response = next.run(req).await;
+
+                // Log request completion
+                info!(target: "stdout", "Request completed - ID: {}", request_id);
+
+                response
+            },
+        ))
         .nest_service(
             "/",
             ServeDir::new(&cli.web_ui).not_found_service(

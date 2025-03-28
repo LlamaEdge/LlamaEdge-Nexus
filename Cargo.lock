@@ -16,6 +16,7 @@ dependencies = [
  "config",
  "endpoints",
  "futures-util",
+ "http 0.2.12",
  "hyper",
  "log",
  "qdrant_rest_client",

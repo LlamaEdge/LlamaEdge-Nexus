@@ -15,6 +15,9 @@ on:
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        archive-name: [llama-nexus-wasm32-wasip1.tar.gz]
     steps:
       - name: Clone project
         id: checkout
@@ -38,10 +41,13 @@ jobs:
       - name: Calculate checksum
         id: checksum
         run: |
-          sha256sum *.wasm > SHA256SUM
-
+          sha256sum llama-nexus.wasm > SHA256SUM
+          sha256sum config.toml >> SHA256SUM
           echo "Debug info(SHA256SUM):"
           cat SHA256SUM
+          tar -czf "${{ matrix.archive-name }}" SHA256SUM llama-nexus.wasm config.toml
+          mkdir -p archive
+          mv "${{ matrix.archive-name }}" archive/
 
       - name: Tag and release names
         id: tag_and_release_names
@@ -59,5 +65,4 @@ jobs:
           draft: true
           prerelease: true
           files: |
-            llama-nexus.wasm
-            SHA256SUM
+            archive/*
